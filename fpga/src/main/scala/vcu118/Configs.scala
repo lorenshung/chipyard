@@ -2,8 +2,26 @@ package chipyard.fpga.vcu118
 
 import sys.process._
 
-import org.chipsalliance.cde.config.{Config, Parameters}
-import freechips.rocketchip.subsystem.{SystemBusKey, PeripheryBusKey, ControlBusKey, ExtMem}
+import org.chipsalliance.cde.config.Config
+import freechips.rocketchip.rocket.{MulDivParams, RocketCoreParams}
+import freechips.rocketchip.subsystem.{
+  CBUS,
+  CCBUS,
+  ClustersLocated,
+  ExtMem,
+  HierarchicalElementMasterPortParams,
+  HierarchicalElementSlavePortParams,
+  HierarchicalLocation,
+  InCluster,
+  InSubsystem,
+  NumTiles,
+  PeripheryBusKey,
+  ControlBusKey,
+  RocketCrossingParams,
+  RocketTileAttachParams,
+  SystemBusKey,
+  TilesLocated
+}
 import freechips.rocketchip.devices.debug.{DebugModuleKey, ExportDebug, JTAG}
 import freechips.rocketchip.devices.tilelink.{DevNullParams, BootROMLocated}
 import freechips.rocketchip.diplomacy.{RegionType, AddressSet}
@@ -20,12 +38,73 @@ import testchipip.serdes.{SerialTLKey}
 
 import chipyard._
 import chipyard.harness._
+import saturn.common.{VectorParams => SaturnVectorParams}
+import saturn.common.VectorIssueStructure
+import freechips.rocketchip.diplomacy.BufferParams
+import freechips.rocketchip.tile.{FPUParams}
+import freechips.rocketchip.tile.RocketTileParams
+import freechips.rocketchip.rocket.{BHTParams, BTBParams, DCacheParams, ICacheParams}
+import freechips.rocketchip.prci.ClockSinkParameters
 
 class WithDefaultPeripherals extends Config((site, here, up) => {
   case PeripheryUARTKey => List(UARTParams(address = BigInt(0x64000000L)))
   case PeripherySPIKey => List(SPIParams(rAddress = BigInt(0x64001000L)))
   case VCU118ShellPMOD => "SDIO"
 })
+
+class WithVCU118RocketCoreParams(coreParams: RocketCoreParams) extends Config((site, here, up) => {
+  case freechips.rocketchip.subsystem.TilesLocated(freechips.rocketchip.subsystem.InSubsystem) =>
+    up(freechips.rocketchip.subsystem.TilesLocated(freechips.rocketchip.subsystem.InSubsystem), site).map {
+      case tp: freechips.rocketchip.subsystem.RocketTileAttachParams =>
+        tp.copy(tileParams = tp.tileParams.copy(core = coreParams))
+      case other => other
+    }
+})
+
+class WithVCU118RocketTileParams(tileParams: RocketTileParams) extends Config((site, here, up) => {
+  case freechips.rocketchip.subsystem.TilesLocated(freechips.rocketchip.subsystem.InSubsystem) =>
+    up(freechips.rocketchip.subsystem.TilesLocated(freechips.rocketchip.subsystem.InSubsystem), site).map {
+      case tp: freechips.rocketchip.subsystem.RocketTileAttachParams =>
+        val existingTileId = tp.tileParams.tileId
+        tp.copy(tileParams = tileParams.copy(tileId = existingTileId))
+      case other => other
+    }
+})
+
+class WithNCustomRocketTiles(
+  n: Int,
+  tileParams: RocketTileParams,
+  location: HierarchicalLocation,
+  crossing: RocketCrossingParams,
+) extends Config((site, here, up) => {
+  case TilesLocated(`location`) => {
+    val prev = up(TilesLocated(`location`), site)
+    val idOffset = up(NumTiles)
+    List.tabulate(n)(i => RocketTileAttachParams(
+      tileParams.copy(tileId = i + idOffset),
+      crossing
+    )) ++ prev
+  }
+  case NumTiles => up(NumTiles) + n
+}) {
+  def this(
+    n: Int,
+    tileParams: RocketTileParams,
+    location: HierarchicalLocation = InSubsystem,
+  ) = this(
+    n,
+    tileParams,
+    location,
+    RocketCrossingParams(
+      master = HierarchicalElementMasterPortParams.locationDefault(location),
+      slave = HierarchicalElementSlavePortParams.locationDefault(location),
+      mmioBaseAddressPrefixWhere = location match {
+        case InSubsystem => CBUS
+        case InCluster(clusterId) => CCBUS(clusterId)
+      }
+    )
+  )
+}
 
 class WithSystemModifications extends Config((site, here, up) => {
   case DTSTimebase => BigInt((1e6).toLong)
@@ -57,7 +136,8 @@ class WithVCU118Tweaks extends Config(
   new chipyard.config.WithTLBackingMemory ++ // use TL backing memory
   new WithSystemModifications ++ // setup busses, use sdboot bootrom, setup ext. mem. size
   new freechips.rocketchip.subsystem.WithoutTLMonitors ++
-  new freechips.rocketchip.subsystem.WithNMemoryChannels(1)
+  new freechips.rocketchip.subsystem.WithNMemoryChannels(1) ++
+  new chipyard.config.WithBroadcastManager
 )
 
 class RocketVCU118Config extends Config(
@@ -70,6 +150,191 @@ class BoomVCU118Config extends Config(
   new WithFPGAFrequency(50) ++
   new WithVCU118Tweaks ++
   new chipyard.MegaBoomV3Config
+)
+
+class CustomSaturnVCU118Config extends Config(
+  {
+    val vcu118VectorParams = SaturnVectorParams(
+      // In-order dispatch Queue
+      vdqEntries = 4,
+
+      // Load store instruction queues (in VLSU)
+      vliqEntries = 4,
+      vsiqEntries = 4,
+
+      // Load store in-flight queues (in VLSU)
+      vlifqEntries = 8,
+      vsifqEntries = 16,
+      vlrobEntries = 2,
+
+      // Scatter-gather engine params
+      vsgPorts = 8,
+      vsgifqEntries = 4,
+      vsgBuffers = 3,
+
+      // Load/store/execute/permute/maskindex issue queues
+      vlissqEntries = 0,
+      vsissqEntries = 0,
+      vxissqEntries = 0,
+      vpissqEntries = 0,
+
+      dLen = 64,
+      mLen = 64,
+      vatSz = 3,
+
+      useSegmentedIMul = false,
+      useScalarFPFMA = true,
+      useIterativeIMul = false,
+      useElementwiseFP64 = true,
+      fmaPipeDepth = 4,
+      imaPipeDepth = 4,
+
+      // for comparisons only
+      hazardingMultiplier = 0,
+      hwachaLimiter = None,
+      enableChaining = true,
+      latencyInject = false,
+      enableDAE = true,
+      enableOOO = true,
+      enableScalarVectorAddrDisambiguation = true,
+
+      doubleBufferSegments = false,
+
+      vrfBanking = 2,
+      vrfHiccupBuffer = true,
+
+      issStructure = VectorIssueStructure.Unified,
+
+      tlBuffer = BufferParams.default,
+    )
+
+    // Saturn `refParams`: stronger issue structure / segmented imul vs lite `vcu118VectorParams`.
+    // We also use our new `IntegerOnly` structure to drop all FP vector hardware.
+    val vcu118VectorParamsFullInt = SaturnVectorParams.refParams.copy(
+      issStructure = VectorIssueStructure.IntegerOnly
+    )
+
+    val vcu118RocketCoreParams = RocketCoreParams(
+      xLen = 64,
+      pgLevels = 3, // sv39 default
+      bootFreqHz = 0,
+      useVM = false,
+      useUser = false,
+      useSupervisor = false,
+      useHypervisor = false,
+      useDebug = true,
+      useAtomics = true,
+      useAtomicsOnlyForIO = false,
+      useCompressed = true,
+      useRVE = false,
+      useConditionalZero = false,
+      useZba = false,
+      useZbb = false,
+      useZbs = false,
+      nLocalInterrupts = 0,
+      useNMI = false,
+      nBreakpoints = 1,
+      useBPWatch = false,
+      mcontextWidth = 0,
+      scontextWidth = 0,
+      nPMPs = 8,
+      nPerfCounters = 0,
+      haveBasicCounters = true,
+      haveCFlush = false,
+      misaWritable = true,
+      nL2TLBEntries = 0,
+      nL2TLBWays = 1,
+      nPTECacheEntries = 0,
+      mtvecInit = Some(BigInt(0)),
+      mtvecWritable = true,
+      fastLoadWord = true,
+      fastLoadByte = false,
+      branchPredictionModeCSR = false,
+      clockGate = false,
+      mvendorid = 0,
+      mimpid = 0x20181004,
+      mulDiv = Some(MulDivParams()),
+      fpu = Some(FPUParams()),
+      debugROB = None,
+      haveCease = true,
+      haveSimTimeout = true,
+      vector = None,
+      enableTraceCoreIngress = false,
+    )
+
+    val vcu118RocketTileParams = RocketTileParams(
+      core = vcu118RocketCoreParams,
+      icache = Some(ICacheParams(
+        nSets = 64,
+        nWays = 4,
+        rowBits = 128,
+        nTLBSets = 1,
+        nTLBWays = 32,
+        nTLBBasePageSectors = 4,
+        nTLBSuperpages = 4,
+        cacheIdBits = 0,
+        tagECC = None,
+        dataECC = None,
+        itimAddr = None,
+        prefetch = false,
+        blockBytes = 64,
+        latency = 2,
+        fetchBytes = 4,
+      )),
+      dcache = Some(DCacheParams(
+        nSets = 64,
+        nWays = 4,
+        rowBits = 64,
+        subWordBits = None,
+        replacementPolicy = "random",
+        nTLBSets = 1,
+        nTLBWays = 32,
+        nTLBBasePageSectors = 4,
+        nTLBSuperpages = 4,
+        tagECC = None,
+        dataECC = None,
+        dataECCBytes = 1,
+        nMSHRs = 1,
+        nSDQ = 17,
+        nRPQ = 16,
+        nMMIOs = 1,
+        blockBytes = 64,
+        separateUncachedResp = false,
+        acquireBeforeRelease = false,
+        pipelineWayMux = false,
+        clockGate = false,
+        scratch = None,
+      )),
+      btb = Some(BTBParams(
+        nEntries = 28,
+        nMatchBits = 14,
+        nPages = 6,
+        nRAS = 6,
+        bhtParams = Some(BHTParams(
+          nEntries = 512,
+          counterLength = 1,
+          historyLength = 8,
+          historyBits = 3,
+        )),
+        updatesOutOfOrder = false,
+      )),
+      dataScratchpadBytes = 0,
+      tileId = 0,
+      beuAddr = None,
+      blockerCtrlAddr = None,
+      clockSinkParams = ClockSinkParameters(),
+      boundaryBuffers = None,
+      traceParams = None,
+    )
+  
+    new WithVCU118Tweaks ++
+    // Per-tile Saturn: left (outer) layer runs after the right; full-int tile first in chain, lite tile inner.
+    new saturn.rocket.WithRocketVectorUnit(128, 128, vcu118VectorParamsFullInt, cores = Some(Seq(0))) ++
+    new saturn.rocket.WithRocketVectorUnit(128, 128, vcu118VectorParams, cores = Some(Seq(1))) ++
+    new chipyard.config.WithSystemBusWidth(128) ++
+    new WithNCustomRocketTiles(2, vcu118RocketTileParams) ++
+    new chipyard.config.AbstractConfig
+  }
 )
 
 class WithFPGAFrequency(fMHz: Double) extends Config(
