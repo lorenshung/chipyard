@@ -1,0 +1,17 @@
+===================================
+Configuration Memory information
+===================================
+File Format        MCS
+Interface          SPIX4
+Size               32M
+Start Address      0x00000000
+End Address        0x01FFFFFF
+Checksum           0x79884014
+Fill Value         0xFF
+
+Addr1         Addr2         Date                    File(s)                                                                                           Checksum
+0x00000000    0x0023433A    Jul 16 16:35:43 2025    /builds/trenz/te0713/te0713-rd/prebuilt/programming_files/100_2c/test_board_spi_bootloader.bit    0x0265C84F
+0x005E0000    0x00658AE3    Jul 16 16:13:57 2025    ./prebuilt/os/petalinux/1GB/u-boot.elf                                                            0x0298BCF0
+0x00B00000    0x0179E0BA    Jul 16 16:34:09 2025    ./prebuilt/os/petalinux/1GB/image.ub                                                              0x6A4EA234
+0x01F00000    0x01F00FDF    Jul 16 16:08:37 2025    ./prebuilt/os/petalinux/1GB/boot.scr                                                              0x000513E7
+File Checksum Total                                                                                                                                   0x6F523B5A

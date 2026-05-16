@@ -2,6 +2,7 @@ package chipyard.fpga.vcu118
 
 import sys.process._
 
+import chisel3._
 import org.chipsalliance.cde.config.Config
 import freechips.rocketchip.rocket.{MulDivParams, RocketCoreParams}
 import freechips.rocketchip.subsystem.{
@@ -39,12 +40,15 @@ import testchipip.serdes.{SerialTLKey}
 import chipyard._
 import chipyard.harness._
 import saturn.common.{VectorParams => SaturnVectorParams}
+import saturn.common.{VectorParams}
 import saturn.common.VectorIssueStructure
 import freechips.rocketchip.diplomacy.BufferParams
 import freechips.rocketchip.tile.{FPUParams}
 import freechips.rocketchip.tile.RocketTileParams
 import freechips.rocketchip.rocket.{BHTParams, BTBParams, DCacheParams, ICacheParams}
 import freechips.rocketchip.prci.ClockSinkParameters
+import gemmini.{CapacityInKilobytes, Dataflow, GemminiArrayConfig, ScaleArguments}
+import gemmini.Arithmetic.SIntArithmetic
 
 class WithDefaultPeripherals extends Config((site, here, up) => {
   case PeripheryUARTKey => List(UARTParams(address = BigInt(0x64000000L)))
@@ -145,6 +149,83 @@ class RocketVCU118Config extends Config(
   new chipyard.RocketConfig
 )
 // DOC include end: AbstractVCU118 and Rocket
+
+object SmallIntGemminiVCU118Config {
+  val gemminiConfig = GemminiArrayConfig[SInt, Bool, UInt](
+    inputType = SInt(8.W),
+    weightType = SInt(8.W),
+    accType = SInt(32.W),
+
+    spatialArrayInputType = SInt(8.W),
+    spatialArrayWeightType = SInt(8.W),
+    spatialArrayOutputType = SInt(20.W),
+
+    tileRows = 1,
+    tileColumns = 1,
+    meshRows = 16,
+    meshColumns = 16,
+    dataflow = Dataflow.BOTH,
+
+    sp_capacity = CapacityInKilobytes(64),
+    acc_capacity = CapacityInKilobytes(16),
+    sp_banks = 4,
+    acc_banks = 2,
+    sp_singleported = true,
+    acc_singleported = false,
+    acc_sub_banks = 2,
+
+    ld_queue_length = 4,
+    st_queue_length = 2,
+    ex_queue_length = 4,
+    reservation_station_entries_ld = 4,
+    reservation_station_entries_st = 4,
+    reservation_station_entries_ex = 8,
+    max_in_flight_mem_reqs = 8,
+
+    dma_maxbytes = 64,
+    dma_buswidth = 128,
+    tlb_size = 4,
+
+    mvin_scale_args = None,
+    mvin_scale_acc_args = None,
+    mvin_scale_shared = false,
+    acc_scale_args = Some(ScaleArguments[SInt, UInt](
+      (value: SInt, shift: UInt) => value >> shift,
+      latency = 1,
+      multiplicand_t = UInt(8.W),
+      num_scale_units = -1,
+      identity = "0",
+      c_str = "ROUNDING_RIGHT_SHIFT(x, scale)"
+    )),
+
+    acc_read_full_width = false,
+    acc_read_small_width = true,
+    ex_read_from_spad = true,
+    ex_read_from_acc = true,
+    ex_write_to_spad = true,
+    ex_write_to_acc = true,
+
+    acc_latency = 2,
+    tile_latency = 0,
+    mesh_output_delay = 2,
+
+    has_training_convs = false,
+    has_max_pool = true,
+    has_nonlinear_activations = true,
+    has_normalizations = false,
+
+    num_counter = 0,
+    headerFileName = "gemmini_params.h",
+  )
+}
+
+class SmallIntGemminiVCU118Config extends Config(
+  new gemmini.DefaultGemminiConfig(SmallIntGemminiVCU118Config.gemminiConfig) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new WithFPGAFrequency(50) ++
+  new WithVCU118Tweaks ++
+  new chipyard.RocketConfig
+)
 
 class BoomVCU118Config extends Config(
   new WithFPGAFrequency(50) ++
@@ -329,7 +410,8 @@ class CustomSaturnVCU118Config extends Config(
   
     new WithVCU118Tweaks ++
     // Per-tile Saturn: left (outer) layer runs after the right; full-int tile first in chain, lite tile inner.
-    new saturn.rocket.WithRocketVectorUnit(128, 128, vcu118VectorParamsFullInt, cores = Some(Seq(0))) ++
+    // new saturn.rocket.WithRocketVectorUnit(128, 128, vcu118VectorParamsFullInt, cores = Some(Seq(0))) ++
+    new saturn.rocket.WithRocketVectorUnit(128, 128, VectorParams.refParams, cores = Some(Seq(0))) ++
     new saturn.rocket.WithRocketVectorUnit(128, 128, vcu118VectorParams, cores = Some(Seq(1))) ++
     new chipyard.config.WithSystemBusWidth(128) ++
     new WithNCustomRocketTiles(2, vcu118RocketTileParams) ++

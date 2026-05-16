@@ -1,0 +1,680 @@
+catch {TE::UTILS::te_msg TE_BD-0 INFO "This block design tcl-file was generate with Trenz Electronic GmbH Board Part:trenz.biz:te0713_100_2c:part0:1.0, FPGA: xc7a100tfgg484-2 at 2025-07-04T12:31:03."}
+
+if { ![info exist TE::VERSION_CONTROL] } {
+  namespace eval ::TE  {
+    set ::TE::VERSION_CONTROL true
+  }
+}
+################################################################
+# Check if script is running in correct Vivado version.
+################################################################
+set scripts_vivado_version 2024.2
+set current_vivado_version [version -short ]
+if { [string first $scripts_vivado_version $current_vivado_version] == -1 &&  $TE::VERSION_CONTROL } {
+   puts ""
+   catch {common::send_msg_id "BD_TCL-109" "ERROR" "This script was generated using Vivado < $scripts_vivado_version> and is being run in < $current_vivado_version> of Vivado. Please run the script in Vivado < $scripts_vivado_version> then open the design in Vivado < $current_vivado_version>. Upgrade the design by running "Tools => Report => Report IP Status...", then run write_bd_tcl to create an updated script."}
+ return 1
+}
+
+################################################################
+# This is a generated script based on design: msys
+#
+# Though there are limitations about the generated script,
+# the main purpose of this utility is to make learning
+# IP Integrator Tcl commands easier.
+################################################################
+
+namespace eval _tcl {
+proc get_script_folder {} {
+   set script_path [file normalize [info script]]
+   set script_folder [file dirname $script_path]
+   return $script_folder
+}
+}
+variable script_folder
+set script_folder [_tcl::get_script_folder]
+
+################################################################
+# Check if script is running in correct Vivado version.
+################################################################
+set scripts_vivado_version 2024.2
+set current_vivado_version [version -short]
+
+if { [string first $scripts_vivado_version $current_vivado_version] == -1 } {
+   puts ""
+   common::send_gid_msg -ssname BD::TCL -id 2040 -severity "CRITICAL WARNING" "This script was generated using Vivado <$scripts_vivado_version> without IP versions in the create_bd_cell commands, but is now being run in <$current_vivado_version> of Vivado. There may have been changes to the IP between Vivado <$scripts_vivado_version> and <$current_vivado_version>, which could impact the functionality and configuration of the design."
+
+}
+
+################################################################
+# START
+################################################################
+
+# To test this script, run the following commands from Vivado Tcl console:
+# source msys_script.tcl
+
+# If there is no project opened, this script will create a
+# project, but make sure you do not have an existing project
+# <./myproj/project_1.xpr> in the current working folder.
+
+set list_projs [get_projects -quiet]
+if { $list_projs eq "" } {
+   create_project project_1 myproj -part xc7a100tfgg484-2
+   set_property BOARD_PART trenz.biz:te0713_100_2c:part0:1.0 [current_project]
+}
+
+
+# CHANGE DESIGN NAME HERE
+variable design_name
+set design_name msys
+
+# If you do not already have an existing IP Integrator design open,
+# you can create a design using the following command:
+#    create_bd_design $design_name
+
+# Creating design if needed
+set errMsg ""
+set nRet 0
+
+set cur_design [current_bd_design -quiet]
+set list_cells [get_bd_cells -quiet]
+
+if { ${design_name} eq "" } {
+   # USE CASES:
+   #    1) Design_name not set
+
+   set errMsg "Please set the variable <design_name> to a non-empty value."
+   set nRet 1
+
+} elseif { ${cur_design} ne "" && ${list_cells} eq "" } {
+   # USE CASES:
+   #    2): Current design opened AND is empty AND names same.
+   #    3): Current design opened AND is empty AND names diff; design_name NOT in project.
+   #    4): Current design opened AND is empty AND names diff; design_name exists in project.
+
+   if { $cur_design ne $design_name } {
+      common::send_gid_msg -ssname BD::TCL -id 2001 -severity "INFO" "Changing value of <design_name> from <$design_name> to <$cur_design> since current design is empty."
+      set design_name [get_property NAME $cur_design]
+   }
+   common::send_gid_msg -ssname BD::TCL -id 2002 -severity "INFO" "Constructing design in IPI design <$cur_design>..."
+
+} elseif { ${cur_design} ne "" && $list_cells ne "" && $cur_design eq $design_name } {
+   # USE CASES:
+   #    5) Current design opened AND has components AND same names.
+
+   set errMsg "Design <$design_name> already exists in your project, please set the variable <design_name> to another value."
+   set nRet 1
+} elseif { [get_files -quiet ${design_name}.bd] ne "" } {
+   # USE CASES: 
+   #    6) Current opened design, has components, but diff names, design_name exists in project.
+   #    7) No opened design, design_name exists in project.
+
+   set errMsg "Design <$design_name> already exists in your project, please set the variable <design_name> to another value."
+   set nRet 2
+
+} else {
+   # USE CASES:
+   #    8) No opened design, design_name not in project.
+   #    9) Current opened design, has components, but diff names, design_name not in project.
+
+   common::send_gid_msg -ssname BD::TCL -id 2003 -severity "INFO" "Currently there is no design <$design_name> in project, so creating one..."
+
+   create_bd_design $design_name
+
+   common::send_gid_msg -ssname BD::TCL -id 2004 -severity "INFO" "Making design <$design_name> as current_bd_design."
+   current_bd_design $design_name
+
+}
+
+common::send_gid_msg -ssname BD::TCL -id 2005 -severity "INFO" "Currently the variable <design_name> is equal to \"$design_name\"."
+
+if { $nRet != 0 } {
+   catch {common::send_gid_msg -ssname BD::TCL -id 2006 -severity "ERROR" $errMsg}
+   return $nRet
+}
+
+set bCheckIPsPassed 1
+##################################################################
+# CHECK IPs
+##################################################################
+set bCheckIPs 1
+if { $bCheckIPs == 1 } {
+   set list_check_ips "\ 
+xilinx.com:ip:axi_quad_spi:*\
+xilinx.com:ip:axi_timer:*\
+xilinx.com:ip:axi_uartlite:*\
+xilinx.com:ip:jtag_axi:*\
+xilinx.com:ip:mdm:*\
+xilinx.com:ip:microblaze:*\
+xilinx.com:ip:axi_intc:*\
+xilinx.com:ip:xlconcat:*\
+xilinx.com:ip:mig_7series:*\
+xilinx.com:ip:proc_sys_reset:*\
+xilinx.com:ip:util_ds_buf:*\
+xilinx.com:ip:vio:*\
+trenz.biz:user:labtools_fmeter:*\
+trenz.biz:user:axi_reg32:*\
+xilinx.com:user:ft601_if:*\
+xilinx.com:ip:axis_data_fifo:*\
+xilinx.com:ip:lmb_bram_if_cntlr:*\
+xilinx.com:ip:lmb_v10:*\
+xilinx.com:ip:blk_mem_gen:*\
+"
+
+   set list_ips_missing ""
+   common::send_gid_msg -ssname BD::TCL -id 2011 -severity "INFO" "Checking if the following IPs exist in the project's IP catalog: $list_check_ips ."
+
+   foreach ip_vlnv $list_check_ips {
+      set ip_obj [get_ipdefs -all $ip_vlnv]
+      if { $ip_obj eq "" } {
+         lappend list_ips_missing $ip_vlnv
+      }
+   }
+
+   if { $list_ips_missing ne "" } {
+      catch {common::send_gid_msg -ssname BD::TCL -id 2012 -severity "ERROR" "The following IPs are not found in the IP Catalog:\n  $list_ips_missing\n\nResolution: Please add the repository containing the IP(s) to the project." }
+      set bCheckIPsPassed 0
+   }
+
+}
+
+if { $bCheckIPsPassed != 1 } {
+  common::send_gid_msg -ssname BD::TCL -id 2023 -severity "WARNING" "Will not continue with creation of design due to the error(s) above."
+  return 3
+}
+
+##################################################################
+# DESIGN PROCs
+##################################################################
+
+
+# Hierarchical cell: microblaze_0_local_memory
+proc create_hier_cell_microblaze_0_local_memory { parentCell nameHier } {
+
+  variable script_folder
+
+  if { $parentCell eq "" || $nameHier eq "" } {
+     catch {common::send_gid_msg -ssname BD::TCL -id 2092 -severity "ERROR" "create_hier_cell_microblaze_0_local_memory() - Empty argument(s)!"}
+     return
+  }
+
+  # Get object for parentCell
+  set parentObj [get_bd_cells $parentCell]
+  if { $parentObj == "" } {
+     catch {common::send_gid_msg -ssname BD::TCL -id 2090 -severity "ERROR" "Unable to find parent cell <$parentCell>!"}
+     return
+  }
+
+  # Make sure parentObj is hier blk
+  set parentType [get_property TYPE $parentObj]
+  if { $parentType ne "hier" } {
+     catch {common::send_gid_msg -ssname BD::TCL -id 2091 -severity "ERROR" "Parent <$parentObj> has TYPE = <$parentType>. Expected to be <hier>."}
+     return
+  }
+
+  # Save current instance; Restore later
+  set oldCurInst [current_bd_instance .]
+
+  # Set parent object as current
+  current_bd_instance $parentObj
+
+  # Create cell and set as current instance
+  set hier_obj [create_bd_cell -type hier $nameHier]
+  current_bd_instance $hier_obj
+
+  # Create interface pins
+  create_bd_intf_pin -mode MirroredMaster -vlnv xilinx.com:interface:lmb_rtl:1.0 DLMB
+
+  create_bd_intf_pin -mode MirroredMaster -vlnv xilinx.com:interface:lmb_rtl:1.0 ILMB
+
+
+  # Create pins
+  create_bd_pin -dir I -type clk LMB_Clk
+  create_bd_pin -dir I -type rst SYS_Rst
+
+  # Create instance: dlmb_bram_if_cntlr, and set properties
+  set dlmb_bram_if_cntlr [ create_bd_cell -type ip -vlnv xilinx.com:ip:lmb_bram_if_cntlr dlmb_bram_if_cntlr ]
+  set_property CONFIG.C_ECC {0} $dlmb_bram_if_cntlr
+
+
+  # Create instance: dlmb_v10, and set properties
+  set dlmb_v10 [ create_bd_cell -type ip -vlnv xilinx.com:ip:lmb_v10 dlmb_v10 ]
+
+  # Create instance: ilmb_bram_if_cntlr, and set properties
+  set ilmb_bram_if_cntlr [ create_bd_cell -type ip -vlnv xilinx.com:ip:lmb_bram_if_cntlr ilmb_bram_if_cntlr ]
+  set_property CONFIG.C_ECC {0} $ilmb_bram_if_cntlr
+
+
+  # Create instance: ilmb_v10, and set properties
+  set ilmb_v10 [ create_bd_cell -type ip -vlnv xilinx.com:ip:lmb_v10 ilmb_v10 ]
+
+  # Create instance: lmb_bram, and set properties
+  set lmb_bram [ create_bd_cell -type ip -vlnv xilinx.com:ip:blk_mem_gen lmb_bram ]
+  set_property -dict [list \
+    CONFIG.Memory_Type {True_Dual_Port_RAM} \
+    CONFIG.use_bram_block {BRAM_Controller} \
+  ] $lmb_bram
+
+
+  # Create interface connections
+  connect_bd_intf_net -intf_net microblaze_0_dlmb [get_bd_intf_pins DLMB] [get_bd_intf_pins dlmb_v10/LMB_M]
+  connect_bd_intf_net -intf_net microblaze_0_dlmb_bus [get_bd_intf_pins dlmb_bram_if_cntlr/SLMB] [get_bd_intf_pins dlmb_v10/LMB_Sl_0]
+  connect_bd_intf_net -intf_net microblaze_0_dlmb_cntlr [get_bd_intf_pins dlmb_bram_if_cntlr/BRAM_PORT] [get_bd_intf_pins lmb_bram/BRAM_PORTA]
+  connect_bd_intf_net -intf_net microblaze_0_ilmb [get_bd_intf_pins ILMB] [get_bd_intf_pins ilmb_v10/LMB_M]
+  connect_bd_intf_net -intf_net microblaze_0_ilmb_bus [get_bd_intf_pins ilmb_bram_if_cntlr/SLMB] [get_bd_intf_pins ilmb_v10/LMB_Sl_0]
+  connect_bd_intf_net -intf_net microblaze_0_ilmb_cntlr [get_bd_intf_pins ilmb_bram_if_cntlr/BRAM_PORT] [get_bd_intf_pins lmb_bram/BRAM_PORTB]
+
+  # Create port connections
+  connect_bd_net -net SYS_Rst_1  [get_bd_pins SYS_Rst] \
+  [get_bd_pins dlmb_bram_if_cntlr/LMB_Rst] \
+  [get_bd_pins dlmb_v10/SYS_Rst] \
+  [get_bd_pins ilmb_bram_if_cntlr/LMB_Rst] \
+  [get_bd_pins ilmb_v10/SYS_Rst]
+  connect_bd_net -net microblaze_0_Clk  [get_bd_pins LMB_Clk] \
+  [get_bd_pins dlmb_bram_if_cntlr/LMB_Clk] \
+  [get_bd_pins dlmb_v10/LMB_Clk] \
+  [get_bd_pins ilmb_bram_if_cntlr/LMB_Clk] \
+  [get_bd_pins ilmb_v10/LMB_Clk]
+
+  # Restore current instance
+  current_bd_instance $oldCurInst
+}
+
+
+# Procedure to create entire design; Provide argument to make
+# procedure reusable. If parentCell is "", will use root.
+proc create_root_design { parentCell } {
+
+  variable script_folder
+  variable design_name
+
+  if { $parentCell eq "" } {
+     set parentCell [get_bd_cells /]
+  }
+
+  # Get object for parentCell
+  set parentObj [get_bd_cells $parentCell]
+  if { $parentObj == "" } {
+     catch {common::send_gid_msg -ssname BD::TCL -id 2090 -severity "ERROR" "Unable to find parent cell <$parentCell>!"}
+     return
+  }
+
+  # Make sure parentObj is hier blk
+  set parentType [get_property TYPE $parentObj]
+  if { $parentType ne "hier" } {
+     catch {common::send_gid_msg -ssname BD::TCL -id 2091 -severity "ERROR" "Parent <$parentObj> has TYPE = <$parentType>. Expected to be <hier>."}
+     return
+  }
+
+  # Save current instance; Restore later
+  set oldCurInst [current_bd_instance .]
+
+  # Set parent object as current
+  current_bd_instance $parentObj
+
+
+  # Create interface ports
+  set DDR3_SDRAM [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:ddrx_rtl:1.0 DDR3_SDRAM ]
+
+  set UART0 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:uart_rtl:1.0 UART0 ]
+
+  set qspi_flash [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:spi_rtl:1.0 qspi_flash ]
+
+  set sys_diff_clock [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_clock_rtl:1.0 sys_diff_clock ]
+  set_property -dict [ list \
+   CONFIG.FREQ_HZ {200000000} \
+   ] $sys_diff_clock
+
+  set mgt_clk0 [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_clock_rtl:1.0 mgt_clk0 ]
+  set_property -dict [ list \
+   CONFIG.FREQ_HZ {125000000} \
+   ] $mgt_clk0
+
+
+  # Create ports
+  set reset [ create_bd_port -dir I -type rst reset ]
+  set_property -dict [ list \
+   CONFIG.POLARITY {ACTIVE_HIGH} \
+ ] $reset
+  set DATA [ create_bd_port -dir IO -from 15 -to 0 DATA ]
+  set BE [ create_bd_port -dir IO -from 1 -to 0 BE ]
+  set WR_N [ create_bd_port -dir O WR_N ]
+  set RD_N [ create_bd_port -dir O RD_N ]
+  set OE_N [ create_bd_port -dir O OE_N ]
+  set FIFO_CLK [ create_bd_port -dir I FIFO_CLK ]
+  set TXE_N [ create_bd_port -dir I TXE_N ]
+  set RXF_N [ create_bd_port -dir I RXF_N ]
+
+  # Create instance: axi_interconnect_0, and set properties
+  set axi_interconnect_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect axi_interconnect_0 ]
+  set_property -dict [list \
+    CONFIG.NUM_MI {1} \
+    CONFIG.NUM_SI {3} \
+  ] $axi_interconnect_0
+
+
+  # Create instance: axi_quad_spi_0, and set properties
+  set axi_quad_spi_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_quad_spi axi_quad_spi_0 ]
+  set_property -dict [list \
+    CONFIG.QSPI_BOARD_INTERFACE {qspi_flash} \
+    CONFIG.USE_BOARD_FLOW {true} \
+  ] $axi_quad_spi_0
+
+
+  # Create instance: axi_timer_0, and set properties
+  set axi_timer_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_timer axi_timer_0 ]
+
+  # Create instance: axi_uartlite_0, and set properties
+  set axi_uartlite_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_uartlite axi_uartlite_0 ]
+  set_property -dict [list \
+    CONFIG.UARTLITE_BOARD_INTERFACE {UART0} \
+    CONFIG.USE_BOARD_FLOW {true} \
+  ] $axi_uartlite_0
+
+
+  # Create instance: jtag_axi_0, and set properties
+  set jtag_axi_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:jtag_axi jtag_axi_0 ]
+
+  # Create instance: mdm_1, and set properties
+  set mdm_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:mdm mdm_1 ]
+
+  # Create instance: microblaze_0, and set properties
+  set microblaze_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:microblaze microblaze_0 ]
+  set_property -dict [list \
+    CONFIG.C_ADDR_TAG_BITS {16} \
+    CONFIG.C_CACHE_BYTE_SIZE {16384} \
+    CONFIG.C_DCACHE_ADDR_TAG {16} \
+    CONFIG.C_DCACHE_BYTE_SIZE {16384} \
+    CONFIG.C_DCACHE_USE_WRITEBACK {0} \
+    CONFIG.C_DEBUG_ENABLED {1} \
+    CONFIG.C_D_AXI {1} \
+    CONFIG.C_D_LMB {1} \
+    CONFIG.C_ENABLE_CONVERSION {0} \
+    CONFIG.C_I_LMB {1} \
+    CONFIG.C_NUMBER_OF_PC_BRK {1} \
+    CONFIG.C_NUMBER_OF_RD_ADDR_BRK {0} \
+    CONFIG.C_NUMBER_OF_WR_ADDR_BRK {0} \
+    CONFIG.C_USE_FPU {0} \
+    CONFIG.G_TEMPLATE_LIST {4} \
+  ] $microblaze_0
+
+
+  # Create instance: microblaze_0_axi_intc, and set properties
+  set microblaze_0_axi_intc [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_intc microblaze_0_axi_intc ]
+  set_property CONFIG.C_HAS_FAST {1} $microblaze_0_axi_intc
+
+
+  # Create instance: microblaze_0_axi_periph, and set properties
+  set microblaze_0_axi_periph [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect microblaze_0_axi_periph ]
+  set_property -dict [list \
+    CONFIG.NUM_MI {5} \
+    CONFIG.NUM_SI {2} \
+  ] $microblaze_0_axi_periph
+
+
+  # Create instance: microblaze_0_local_memory
+  create_hier_cell_microblaze_0_local_memory [current_bd_instance .] microblaze_0_local_memory
+
+  # Create instance: microblaze_0_xlconcat, and set properties
+  set microblaze_0_xlconcat [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconcat microblaze_0_xlconcat ]
+  set_property CONFIG.NUM_PORTS {3} $microblaze_0_xlconcat
+
+
+  # Create instance: mig_7series_0, and set properties
+  set mig_7series_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:mig_7series mig_7series_0 ]
+  set_property -dict [list \
+    CONFIG.BOARD_MIG_PARAM {DDR3_SDRAM} \
+    CONFIG.RESET_BOARD_INTERFACE {reset} \
+  ] $mig_7series_0
+
+
+  # Create instance: rst_mig_7series_0_100M, and set properties
+  set rst_mig_7series_0_100M [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset rst_mig_7series_0_100M ]
+
+  # Create instance: util_ds_buf_0, and set properties
+  set util_ds_buf_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:util_ds_buf util_ds_buf_0 ]
+  set_property -dict [list \
+    CONFIG.DIFF_CLK_IN_BOARD_INTERFACE {sys_diff_clock} \
+    CONFIG.USE_BOARD_FLOW {true} \
+  ] $util_ds_buf_0
+
+
+  # Create instance: vio_0, and set properties
+  set vio_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:vio vio_0 ]
+  set_property -dict [list \
+    CONFIG.C_NUM_PROBE_IN {11} \
+    CONFIG.C_NUM_PROBE_OUT {1} \
+    CONFIG.C_PROBE_OUT0_INIT_VAL {0x1} \
+  ] $vio_0
+
+
+  # Create instance: util_ds_buf_1, and set properties
+  set util_ds_buf_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:util_ds_buf util_ds_buf_1 ]
+  set_property CONFIG.DIFF_CLK_IN_BOARD_INTERFACE {mgt_clk0} $util_ds_buf_1
+
+
+  # Create instance: xlconcat_0, and set properties
+  set xlconcat_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconcat xlconcat_0 ]
+  set_property CONFIG.NUM_PORTS {4} $xlconcat_0
+
+
+  # Create instance: labtools_fmeter_0, and set properties
+  set labtools_fmeter_0 [ create_bd_cell -type ip -vlnv trenz.biz:user:labtools_fmeter labtools_fmeter_0 ]
+  set_property CONFIG.C_CHANNELS {4} $labtools_fmeter_0
+
+
+  # Create instance: axi_reg32_0, and set properties
+  set axi_reg32_0 [ create_bd_cell -type ip -vlnv trenz.biz:user:axi_reg32 axi_reg32_0 ]
+  set_property -dict [list \
+    CONFIG.C_NUM_RO_REG {3} \
+    CONFIG.C_NUM_WR_REG {0} \
+  ] $axi_reg32_0
+
+
+  # Create instance: jtag_axi_1, and set properties
+  set jtag_axi_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:jtag_axi jtag_axi_1 ]
+
+  # Create instance: ft601_if_0, and set properties
+  set ft601_if_0 [ create_bd_cell -type ip -vlnv xilinx.com:user:ft601_if ft601_if_0 ]
+
+  # Create instance: axis_data_fifo_0, and set properties
+  set axis_data_fifo_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_data_fifo axis_data_fifo_0 ]
+  set_property -dict [list \
+    CONFIG.FIFO_DEPTH {32768} \
+    CONFIG.HAS_AEMPTY {1} \
+    CONFIG.HAS_AFULL {1} \
+    CONFIG.HAS_RD_DATA_COUNT {1} \
+  ] $axis_data_fifo_0
+
+
+  # Create instance: proc_sys_reset_0, and set properties
+  set proc_sys_reset_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset proc_sys_reset_0 ]
+
+  # Create interface connections
+  connect_bd_intf_net -intf_net axi_interconnect_0_M00_AXI [get_bd_intf_pins axi_interconnect_0/M00_AXI] [get_bd_intf_pins mig_7series_0/S_AXI]
+  connect_bd_intf_net -intf_net axi_quad_spi_0_SPI_0 [get_bd_intf_ports qspi_flash] [get_bd_intf_pins axi_quad_spi_0/SPI_0]
+  connect_bd_intf_net -intf_net axi_uartlite_0_UART [get_bd_intf_ports UART0] [get_bd_intf_pins axi_uartlite_0/UART]
+  connect_bd_intf_net -intf_net axis_data_fifo_0_M_AXIS [get_bd_intf_pins axis_data_fifo_0/M_AXIS] [get_bd_intf_pins ft601_if_0/s_axis]
+  connect_bd_intf_net -intf_net ft601_if_0_m_axis [get_bd_intf_pins ft601_if_0/m_axis] [get_bd_intf_pins axis_data_fifo_0/S_AXIS]
+  connect_bd_intf_net -intf_net jtag_axi_0_M_AXI [get_bd_intf_pins axi_interconnect_0/S02_AXI] [get_bd_intf_pins jtag_axi_0/M_AXI]
+  connect_bd_intf_net -intf_net jtag_axi_1_M_AXI [get_bd_intf_pins jtag_axi_1/M_AXI] [get_bd_intf_pins microblaze_0_axi_periph/S01_AXI]
+  connect_bd_intf_net -intf_net mgt_clk0_1 [get_bd_intf_ports mgt_clk0] [get_bd_intf_pins util_ds_buf_1/CLK_IN_D]
+  connect_bd_intf_net -intf_net microblaze_0_M_AXI_DC [get_bd_intf_pins axi_interconnect_0/S00_AXI] [get_bd_intf_pins microblaze_0/M_AXI_DC]
+  connect_bd_intf_net -intf_net microblaze_0_M_AXI_IC [get_bd_intf_pins axi_interconnect_0/S01_AXI] [get_bd_intf_pins microblaze_0/M_AXI_IC]
+  connect_bd_intf_net -intf_net microblaze_0_axi_dp [get_bd_intf_pins microblaze_0/M_AXI_DP] [get_bd_intf_pins microblaze_0_axi_periph/S00_AXI]
+  connect_bd_intf_net -intf_net microblaze_0_axi_periph_M01_AXI [get_bd_intf_pins axi_quad_spi_0/AXI_LITE] [get_bd_intf_pins microblaze_0_axi_periph/M01_AXI]
+  connect_bd_intf_net -intf_net microblaze_0_axi_periph_M02_AXI [get_bd_intf_pins axi_uartlite_0/S_AXI] [get_bd_intf_pins microblaze_0_axi_periph/M02_AXI]
+  connect_bd_intf_net -intf_net microblaze_0_axi_periph_M03_AXI [get_bd_intf_pins axi_timer_0/S_AXI] [get_bd_intf_pins microblaze_0_axi_periph/M03_AXI]
+  connect_bd_intf_net -intf_net microblaze_0_axi_periph_M04_AXI [get_bd_intf_pins axi_reg32_0/S_AXI] [get_bd_intf_pins microblaze_0_axi_periph/M04_AXI]
+  connect_bd_intf_net -intf_net microblaze_0_debug [get_bd_intf_pins mdm_1/MBDEBUG_0] [get_bd_intf_pins microblaze_0/DEBUG]
+  connect_bd_intf_net -intf_net microblaze_0_dlmb_1 [get_bd_intf_pins microblaze_0/DLMB] [get_bd_intf_pins microblaze_0_local_memory/DLMB]
+  connect_bd_intf_net -intf_net microblaze_0_ilmb_1 [get_bd_intf_pins microblaze_0/ILMB] [get_bd_intf_pins microblaze_0_local_memory/ILMB]
+  connect_bd_intf_net -intf_net microblaze_0_intc_axi [get_bd_intf_pins microblaze_0_axi_intc/s_axi] [get_bd_intf_pins microblaze_0_axi_periph/M00_AXI]
+  connect_bd_intf_net -intf_net microblaze_0_interrupt [get_bd_intf_pins microblaze_0/INTERRUPT] [get_bd_intf_pins microblaze_0_axi_intc/interrupt]
+  connect_bd_intf_net -intf_net mig_7series_0_DDR3 [get_bd_intf_ports DDR3_SDRAM] [get_bd_intf_pins mig_7series_0/DDR3]
+  connect_bd_intf_net -intf_net sys_diff_clock_1 [get_bd_intf_ports sys_diff_clock] [get_bd_intf_pins util_ds_buf_0/CLK_IN_D]
+
+  # Create port connections
+  connect_bd_net -net FT600_clk  [get_bd_pins labtools_fmeter_0/F3] \
+  [get_bd_pins vio_0/probe_in10]
+  connect_bd_net -net Net  [get_bd_ports DATA] \
+  [get_bd_pins ft601_if_0/data_io]
+  connect_bd_net -net Net1  [get_bd_ports BE] \
+  [get_bd_pins ft601_if_0/be_io]
+  connect_bd_net -net axi_quad_spi_0_ip2intc_irpt  [get_bd_pins axi_quad_spi_0/ip2intc_irpt] \
+  [get_bd_pins microblaze_0_xlconcat/In0]
+  connect_bd_net -net axi_timer_0_interrupt  [get_bd_pins axi_timer_0/interrupt] \
+  [get_bd_pins microblaze_0_xlconcat/In2]
+  connect_bd_net -net axi_uartlite_0_interrupt  [get_bd_pins axi_uartlite_0/interrupt] \
+  [get_bd_pins microblaze_0_xlconcat/In1]
+  connect_bd_net -net axis_data_fifo_0_almost_empty  [get_bd_pins axis_data_fifo_0/almost_empty] \
+  [get_bd_pins vio_0/probe_in8]
+  connect_bd_net -net axis_data_fifo_0_almost_full  [get_bd_pins axis_data_fifo_0/almost_full] \
+  [get_bd_pins vio_0/probe_in9]
+  connect_bd_net -net axis_data_fifo_0_axis_rd_data_count  [get_bd_pins axis_data_fifo_0/axis_rd_data_count] \
+  [get_bd_pins vio_0/probe_in7]
+  connect_bd_net -net clk_in_0_1  [get_bd_ports FIFO_CLK] \
+  [get_bd_pins ft601_if_0/clk_in] \
+  [get_bd_pins xlconcat_0/In3]
+  connect_bd_net -net ft601_if_0_axis_aclk  [get_bd_pins ft601_if_0/axis_aclk] \
+  [get_bd_pins proc_sys_reset_0/slowest_sync_clk] \
+  [get_bd_pins axis_data_fifo_0/s_axis_aclk]
+  connect_bd_net -net ft601_if_0_oe_n_out  [get_bd_pins ft601_if_0/oe_n_out] \
+  [get_bd_ports OE_N]
+  connect_bd_net -net ft601_if_0_rd_n_out  [get_bd_pins ft601_if_0/rd_n_out] \
+  [get_bd_ports RD_N]
+  connect_bd_net -net ft601_if_0_wr_n_out  [get_bd_pins ft601_if_0/wr_n_out] \
+  [get_bd_ports WR_N]
+  connect_bd_net -net labtools_fmeter_0_F0  [get_bd_pins labtools_fmeter_0/F0] \
+  [get_bd_pins axi_reg32_0/RR0] \
+  [get_bd_pins vio_0/probe_in3]
+  connect_bd_net -net labtools_fmeter_0_F1  [get_bd_pins labtools_fmeter_0/F1] \
+  [get_bd_pins axi_reg32_0/RR1] \
+  [get_bd_pins vio_0/probe_in4]
+  connect_bd_net -net labtools_fmeter_0_F2  [get_bd_pins labtools_fmeter_0/F2] \
+  [get_bd_pins axi_reg32_0/RR2] \
+  [get_bd_pins vio_0/probe_in5]
+  connect_bd_net -net labtools_fmeter_0_update  [get_bd_pins labtools_fmeter_0/update] \
+  [get_bd_pins vio_0/probe_in6]
+  connect_bd_net -net mdm_1_debug_sys_rst  [get_bd_pins mdm_1/Debug_SYS_Rst] \
+  [get_bd_pins rst_mig_7series_0_100M/mb_debug_sys_rst]
+  connect_bd_net -net microblaze_0_Clk  [get_bd_pins mig_7series_0/ui_clk] \
+  [get_bd_pins axi_interconnect_0/ACLK] \
+  [get_bd_pins axi_interconnect_0/M00_ACLK] \
+  [get_bd_pins axi_interconnect_0/S00_ACLK] \
+  [get_bd_pins axi_interconnect_0/S01_ACLK] \
+  [get_bd_pins axi_interconnect_0/S02_ACLK] \
+  [get_bd_pins axi_quad_spi_0/ext_spi_clk] \
+  [get_bd_pins axi_quad_spi_0/s_axi_aclk] \
+  [get_bd_pins axi_timer_0/s_axi_aclk] \
+  [get_bd_pins axi_uartlite_0/s_axi_aclk] \
+  [get_bd_pins jtag_axi_0/aclk] \
+  [get_bd_pins microblaze_0/Clk] \
+  [get_bd_pins microblaze_0_axi_intc/processor_clk] \
+  [get_bd_pins microblaze_0_axi_intc/s_axi_aclk] \
+  [get_bd_pins microblaze_0_axi_periph/ACLK] \
+  [get_bd_pins microblaze_0_axi_periph/M00_ACLK] \
+  [get_bd_pins microblaze_0_axi_periph/M01_ACLK] \
+  [get_bd_pins microblaze_0_axi_periph/M02_ACLK] \
+  [get_bd_pins microblaze_0_axi_periph/M03_ACLK] \
+  [get_bd_pins microblaze_0_axi_periph/S00_ACLK] \
+  [get_bd_pins microblaze_0_local_memory/LMB_Clk] \
+  [get_bd_pins rst_mig_7series_0_100M/slowest_sync_clk] \
+  [get_bd_pins xlconcat_0/In2] \
+  [get_bd_pins labtools_fmeter_0/refclk] \
+  [get_bd_pins axi_reg32_0/s_axi_aclk] \
+  [get_bd_pins microblaze_0_axi_periph/M04_ACLK] \
+  [get_bd_pins jtag_axi_1/aclk] \
+  [get_bd_pins microblaze_0_axi_periph/S01_ACLK]
+  connect_bd_net -net microblaze_0_intr  [get_bd_pins microblaze_0_xlconcat/dout] \
+  [get_bd_pins microblaze_0_axi_intc/intr]
+  connect_bd_net -net mig_7series_0_init_calib_complete  [get_bd_pins mig_7series_0/init_calib_complete] \
+  [get_bd_pins vio_0/probe_in0]
+  connect_bd_net -net mig_7series_0_mmcm_locked  [get_bd_pins mig_7series_0/mmcm_locked] \
+  [get_bd_pins rst_mig_7series_0_100M/dcm_locked]
+  connect_bd_net -net mig_7series_0_ui_clk_sync_rst  [get_bd_pins mig_7series_0/ui_clk_sync_rst] \
+  [get_bd_pins rst_mig_7series_0_100M/ext_reset_in]
+  connect_bd_net -net proc_sys_reset_0_peripheral_aresetn  [get_bd_pins proc_sys_reset_0/peripheral_aresetn] \
+  [get_bd_pins axis_data_fifo_0/s_axis_aresetn]
+  connect_bd_net -net reset_1  [get_bd_ports reset] \
+  [get_bd_pins mig_7series_0/sys_rst] \
+  [get_bd_pins vio_0/probe_in1]
+  connect_bd_net -net rst_mig_7series_0_100M_bus_struct_reset  [get_bd_pins rst_mig_7series_0_100M/bus_struct_reset] \
+  [get_bd_pins microblaze_0_local_memory/SYS_Rst]
+  connect_bd_net -net rst_mig_7series_0_100M_interconnect_aresetn  [get_bd_pins rst_mig_7series_0_100M/interconnect_aresetn] \
+  [get_bd_pins axi_interconnect_0/ARESETN] \
+  [get_bd_pins microblaze_0_axi_periph/ARESETN] \
+  [get_bd_pins jtag_axi_1/aresetn]
+  connect_bd_net -net rst_mig_7series_0_100M_mb_reset  [get_bd_pins rst_mig_7series_0_100M/mb_reset] \
+  [get_bd_pins microblaze_0/Reset] \
+  [get_bd_pins microblaze_0_axi_intc/processor_rst] \
+  [get_bd_pins vio_0/probe_in2]
+  connect_bd_net -net rst_mig_7series_0_100M_peripheral_aresetn  [get_bd_pins rst_mig_7series_0_100M/peripheral_aresetn] \
+  [get_bd_pins axi_interconnect_0/M00_ARESETN] \
+  [get_bd_pins axi_interconnect_0/S00_ARESETN] \
+  [get_bd_pins axi_interconnect_0/S01_ARESETN] \
+  [get_bd_pins axi_interconnect_0/S02_ARESETN] \
+  [get_bd_pins axi_quad_spi_0/s_axi_aresetn] \
+  [get_bd_pins axi_timer_0/s_axi_aresetn] \
+  [get_bd_pins axi_uartlite_0/s_axi_aresetn] \
+  [get_bd_pins jtag_axi_0/aresetn] \
+  [get_bd_pins microblaze_0_axi_intc/s_axi_aresetn] \
+  [get_bd_pins microblaze_0_axi_periph/M00_ARESETN] \
+  [get_bd_pins microblaze_0_axi_periph/M01_ARESETN] \
+  [get_bd_pins microblaze_0_axi_periph/M02_ARESETN] \
+  [get_bd_pins microblaze_0_axi_periph/M03_ARESETN] \
+  [get_bd_pins microblaze_0_axi_periph/S00_ARESETN] \
+  [get_bd_pins mig_7series_0/aresetn] \
+  [get_bd_pins axi_reg32_0/s_axi_aresetn] \
+  [get_bd_pins microblaze_0_axi_periph/M04_ARESETN] \
+  [get_bd_pins microblaze_0_axi_periph/S01_ARESETN]
+  connect_bd_net -net rxf_n_in_0_1  [get_bd_ports RXF_N] \
+  [get_bd_pins ft601_if_0/rxf_n_in]
+  connect_bd_net -net txe_n_in_0_1  [get_bd_ports TXE_N] \
+  [get_bd_pins ft601_if_0/txe_n_in]
+  connect_bd_net -net util_ds_buf_0_IBUF_OUT  [get_bd_pins util_ds_buf_0/IBUF_OUT] \
+  [get_bd_pins mig_7series_0/sys_clk_i] \
+  [get_bd_pins vio_0/clk] \
+  [get_bd_pins xlconcat_0/In1]
+  connect_bd_net -net util_ds_buf_1_IBUF_OUT  [get_bd_pins util_ds_buf_1/IBUF_OUT] \
+  [get_bd_pins xlconcat_0/In0]
+  connect_bd_net -net vio_0_probe_out0  [get_bd_pins vio_0/probe_out0] \
+  [get_bd_pins proc_sys_reset_0/ext_reset_in]
+  connect_bd_net -net xlconcat_0_dout  [get_bd_pins xlconcat_0/dout] \
+  [get_bd_pins labtools_fmeter_0/fin]
+
+  # Create address segments
+  assign_bd_address -offset 0x80000000 -range 0x40000000 -target_address_space [get_bd_addr_spaces jtag_axi_0/Data] [get_bd_addr_segs mig_7series_0/memmap/memaddr] -force
+  assign_bd_address -offset 0x44A00000 -range 0x00010000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs axi_quad_spi_0/AXI_LITE/Reg] -force
+  assign_bd_address -offset 0x44A10000 -range 0x00010000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs axi_reg32_0/S_AXI/S_AXI_reg] -force
+  assign_bd_address -offset 0x41C00000 -range 0x00010000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs axi_timer_0/S_AXI/Reg] -force
+  assign_bd_address -offset 0x40600000 -range 0x00010000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs axi_uartlite_0/S_AXI/Reg] -force
+  assign_bd_address -offset 0x00000000 -range 0x00008000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs microblaze_0_local_memory/dlmb_bram_if_cntlr/SLMB/Mem] -force
+  assign_bd_address -offset 0x41200000 -range 0x00010000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs microblaze_0_axi_intc/S_AXI/Reg] -force
+  assign_bd_address -offset 0x80000000 -range 0x40000000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs mig_7series_0/memmap/memaddr] -force
+  assign_bd_address -offset 0x00000000 -range 0x00008000 -target_address_space [get_bd_addr_spaces microblaze_0/Instruction] [get_bd_addr_segs microblaze_0_local_memory/ilmb_bram_if_cntlr/SLMB/Mem] -force
+  assign_bd_address -offset 0x80000000 -range 0x40000000 -target_address_space [get_bd_addr_spaces microblaze_0/Instruction] [get_bd_addr_segs mig_7series_0/memmap/memaddr] -force
+  assign_bd_address -offset 0x44A00000 -range 0x00010000 -target_address_space [get_bd_addr_spaces jtag_axi_1/Data] [get_bd_addr_segs axi_quad_spi_0/AXI_LITE/Reg] -force
+  assign_bd_address -offset 0x44A10000 -range 0x00010000 -target_address_space [get_bd_addr_spaces jtag_axi_1/Data] [get_bd_addr_segs axi_reg32_0/S_AXI/S_AXI_reg] -force
+  assign_bd_address -offset 0x41C00000 -range 0x00010000 -target_address_space [get_bd_addr_spaces jtag_axi_1/Data] [get_bd_addr_segs axi_timer_0/S_AXI/Reg] -force
+  assign_bd_address -offset 0x40600000 -range 0x00010000 -target_address_space [get_bd_addr_spaces jtag_axi_1/Data] [get_bd_addr_segs axi_uartlite_0/S_AXI/Reg] -force
+  assign_bd_address -offset 0x41200000 -range 0x00010000 -target_address_space [get_bd_addr_spaces jtag_axi_1/Data] [get_bd_addr_segs microblaze_0_axi_intc/S_AXI/Reg] -force
+
+
+  # Restore current instance
+  current_bd_instance $oldCurInst
+
+  validate_bd_design
+  save_bd_design
+}
+# End of create_root_design()
+
+
+##################################################################
+# MAIN FLOW
+##################################################################
+
+create_root_design ""
+
+
+

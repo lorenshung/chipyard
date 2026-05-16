@@ -1,0 +1,10 @@
+.Xil/
+.statistics
+busybox/
+config.old
+flash_parts.txt
+gen-machineconf.log
+init-ifupdown/
+linux-xlnx/
+plnx_syshw_data
+u-boot-xlnx/

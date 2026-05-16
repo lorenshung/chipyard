@@ -1,0 +1,11 @@
+CSV_VERSION=1.4
+#Comment:-do not change matrix position or remove CSV_VERSION:
+ID  , PRODID            ,PARTNAME           ,BOARDNAME                            ,SHORTNAME      ,ZYNQFLASHTYP ,FPGAFLASHTYP                               ,PCB_REV      ,DDR_SIZE ,FLASH_SIZE ,EMMC_SIZE  ,OTHERS ,NOTES  ,DESIGN
+1   , TE0713-02-100-2C  ,xc7a100tfgg484-2   ,trenz.biz:te0713_100_2c:part0:1.0    ,100_2c         ,NA           ,s25fl256sxxxxxx0-spi-x1_x2_x4|SPIx4|32     ,REV02|REV01  ,1GB      ,32MB       ,NA         ,NA     ,NA     ,TE0713
+2   , TE0713-02-200-2C  ,xc7a200tfbg484-2   ,trenz.biz:te0713_200_2c:part0:1.0    ,200_2c         ,NA           ,s25fl256sxxxxxx0-spi-x1_x2_x4|SPIx4|32     ,REV02|REV01  ,1GB      ,32MB       ,NA         ,NA     ,NA     ,TE0713
+3   , TE0713-02-72C46-A ,xc7a100tfgg484-2   ,trenz.biz:te0713_100_2c:part0:1.0    ,100_2c         ,NA           ,s25fl256sxxxxxx0-spi-x1_x2_x4|SPIx4|32     ,REV02        ,1GB      ,32MB       ,NA         ,NA     ,NA     ,TE0713
+4   , TE0713-02-82C46-A ,xc7a200tfbg484-2   ,trenz.biz:te0713_200_2c:part0:1.0    ,200_2c         ,NA           ,s25fl256sxxxxxx0-spi-x1_x2_x4|SPIx4|32     ,REV02        ,1GB      ,32MB       ,NA         ,NA     ,NA     ,TE0713
+5   , TE0713-03-72C46-A ,xc7a100tfgg484-2   ,trenz.biz:te0713_100_2c:part0:1.0    ,100_2c         ,NA           ,s25fl256sxxxxxx0-spi-x1_x2_x4|SPIx4|32     ,REV03        ,1GB      ,32MB       ,NA         ,NA     ,NA     ,TE0713
+6   , TE0713-03-82C46-A ,xc7a200tfbg484-2   ,trenz.biz:te0713_200_2c:part0:1.0    ,200_2c         ,NA           ,s25fl256sxxxxxx0-spi-x1_x2_x4|SPIx4|32     ,REV03        ,1GB      ,32MB       ,NA         ,NA     ,NA     ,TE0713
+7   , TE0713-03-P001    ,xc7a200tfbg484-2   ,trenz.biz:te0713_200_2c:part0:1.0    ,200_2c         ,NA           ,s25fl256sxxxxxx0-spi-x1_x2_x4|SPIx4|32     ,REV03        ,1GB      ,32MB       ,NA         ,NA     ,NA     ,TE0713
+8   , TE0713-03-72I46-A ,xc7a100tfgg484-2   ,trenz.biz:te0713_100_2c:part0:1.0    ,100_2c         ,NA           ,s25fl256sxxxxxx0-spi-x1_x2_x4|SPIx4|32     ,REV03        ,1GB      ,32MB       ,NA         ,NA     ,NA     ,TE0713
