@@ -33,13 +33,20 @@ class Arty100THarness(override implicit val p: Parameters) extends Arty100TShell
 
   harnessSysPLLNode := clockOverlay.overlayOutput.node
 
-  val ddrOverlay = dp(DDROverlayKey).head.place(DDRDesignInput(dp(ExtTLMem).get.master.base, dutWrangler.node, harnessSysPLLNode)).asInstanceOf[DDRArtyPlacedOverlay]
-  val ddrClient = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLMasterParameters.v1(
-    name = "chip_ddr",
-    sourceId = IdRange(0, 1 << dp(ExtTLMem).get.master.idBits)
-  )))))
-  val ddrBlockDuringReset = LazyModule(new TLBlockDuringReset(4))
-  ddrOverlay.overlayOutput.ddr := ddrBlockDuringReset.node := ddrClient
+  def includeDDR: Boolean = true
+
+  val (ddrOverlay, ddrClient, ddrBlockDuringReset) = if (includeDDR) {
+    val o = dp(DDROverlayKey).head.place(DDRDesignInput(dp(ExtTLMem).get.master.base, dutWrangler.node, harnessSysPLLNode)).asInstanceOf[DDRArtyPlacedOverlay]
+    val c = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLMasterParameters.v1(
+      name = "chip_ddr",
+      sourceId = IdRange(0, 1 << dp(ExtTLMem).get.master.idBits)
+    )))))
+    val b = LazyModule(new TLBlockDuringReset(4))
+    o.overlayOutput.ddr := b.node := c
+    (Some(o), Some(c), Some(b))
+  } else {
+    (None, None, None)
+  }
 
   val ledOverlays = dp(LEDOverlayKey).map(_.place(LEDDesignInput()))
   val all_leds = ledOverlays.map(_.overlayOutput.led)
@@ -79,13 +86,18 @@ class Arty100THarness(override implicit val p: Parameters) extends Arty100TShell
     childClock := harnessBinderClock
     childReset := harnessBinderReset
 
-    ddrOverlay.mig.module.clock := harnessBinderClock
-    ddrOverlay.mig.module.reset := harnessBinderReset
-    ddrBlockDuringReset.module.clock := harnessBinderClock
-    ddrBlockDuringReset.module.reset := harnessBinderReset.asBool || !ddrOverlay.mig.module.io.port.init_calib_complete
-
-    other_leds(6) := ddrOverlay.mig.module.io.port.init_calib_complete
+    ddrOverlay.foreach { o =>
+      o.mig.module.clock := harnessBinderClock
+      o.mig.module.reset := harnessBinderReset
+      ddrBlockDuringReset.get.module.clock := harnessBinderClock
+      ddrBlockDuringReset.get.module.reset := harnessBinderReset.asBool || !o.mig.module.io.port.init_calib_complete
+      other_leds(6) := o.mig.module.io.port.init_calib_complete
+    }
 
     instantiateChipTops()
   }
+}
+
+class Arty100TScratchpadHarness(override implicit val p: Parameters) extends Arty100THarness {
+  override def includeDDR = false
 }

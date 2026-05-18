@@ -86,6 +86,19 @@ ifeq ($(SUB_PROJECT),arty100t)
 	BOARD             ?= arty_a7_100
 	FPGA_BRAND        ?= xilinx
 endif
+ifeq ($(SUB_PROJECT),arty100t_sp)
+	SBT_PROJECT       ?= chipyard_fpga
+	MODEL             ?= Arty100TScratchpadHarness
+	VLOG_MODEL        ?= Arty100TScratchpadHarness
+	MODEL_PACKAGE     ?= chipyard.fpga.arty100t
+	CONFIG            ?= ScratchpadArty100TConfig
+	CONFIG_PACKAGE    ?= chipyard.fpga.arty100t
+	GENERATOR_PACKAGE ?= chipyard
+	TB                ?= none # unused
+	TOP               ?= ChipTop
+	BOARD             ?= arty_a7_100
+	FPGA_BRAND        ?= xilinx
+endif
 ifeq ($(SUB_PROJECT),datastorm)
 	SBT_PROJECT       ?= chipyard_fpga
 	MODEL             ?= DatastormHarness

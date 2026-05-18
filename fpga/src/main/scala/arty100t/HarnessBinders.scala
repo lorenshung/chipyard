@@ -45,7 +45,7 @@ class WithArty100TUARTTSI extends HarnessBinder({
 class WithArty100TDDRTL extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: TLMemPort, chipId: Int) => {
     val artyTh = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[Arty100THarness]
-    val bundles = artyTh.ddrClient.out.map(_._1)
+    val bundles = artyTh.ddrClient.get.out.map(_._1)
     val ddrClientBundle = Wire(new HeterogeneousBag(bundles.map(_.cloneType)))
     bundles.zip(ddrClientBundle).foreach { case (bundle, io) => bundle <> io }
     ddrClientBundle <> port.io
