@@ -99,6 +99,19 @@ ifeq ($(SUB_PROJECT),arty_trenz)
 	BOARD             ?= arty_trenz
 	FPGA_BRAND        ?= xilinx
 endif
+ifeq ($(SUB_PROJECT),arty_trenz_sp)
+	SBT_PROJECT       ?= chipyard_fpga
+	MODEL             ?= ArtyTrenzScratchpadHarness
+	VLOG_MODEL        ?= ArtyTrenzScratchpadHarness
+	MODEL_PACKAGE     ?= chipyard.fpga.arty_trenz
+	CONFIG            ?= ScratchpadArtyTrenzConfig
+	CONFIG_PACKAGE    ?= chipyard.fpga.arty_trenz
+	GENERATOR_PACKAGE ?= chipyard
+	TB                ?= none # unused
+	TOP               ?= ChipTop
+	BOARD             ?= arty_trenz
+	FPGA_BRAND        ?= xilinx
+endif
 ifeq ($(SUB_PROJECT),datastorm)
 	SBT_PROJECT       ?= chipyard_fpga
 	MODEL             ?= DatastormHarness

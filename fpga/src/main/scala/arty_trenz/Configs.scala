@@ -48,3 +48,39 @@ class BringupArtyTrenzConfig extends Config(
   new WithArtyTrenzTweaks(freqMHz = 50) ++
   new testchipip.serdes.WithSerialTLPHYParams(testchipip.serdes.DecoupledInternalSyncSerialPhyParams(freqMHz=50)) ++
   new chipyard.ChipBringupHostConfig)
+
+// Overrides WithScratchpadsOnly's 16 KB default (nSets=256) up to 32 KB.
+// 512 sets * 64-byte blocks * 1 way = 32 KiB DTIM @ 0x80000000.
+class With32KBDTIM extends Config((site, here, up) => {
+  case freechips.rocketchip.subsystem.TilesLocated(loc) => up(freechips.rocketchip.subsystem.TilesLocated(loc), site).map {
+    case tp: freechips.rocketchip.subsystem.RocketTileAttachParams =>
+      tp.copy(tileParams = tp.tileParams.copy(
+        dcache = tp.tileParams.dcache.map(_.copy(nSets = 512))
+      ))
+    case other => other
+  }
+})
+
+// Scratchpad-only tweaks: same peripheral set as WithArtyTrenzTweaks but
+// drops DDR/ExtMem so the ArtyTrenzScratchpadHarness (includeDDR=false) elaborates.
+class WithArtyTrenzScratchpadTweaks(freqMHz: Double = 50) extends Config(
+  new WithArtyTrenzUART ++
+  new WithArtyTrenzJTAG ++
+  new WithNoDesignKey ++
+  new chipyard.harness.WithSerialTLTiedOff ++
+  new chipyard.harness.WithHarnessBinderClockFreqMHz(freqMHz) ++
+  new chipyard.config.WithUniformBusFrequencies(freqMHz) ++
+  new chipyard.harness.WithAllClocksFromHarnessClockInstantiator ++
+  new chipyard.clocking.WithPassthroughClockGenerator ++
+  new freechips.rocketchip.subsystem.WithoutTLMonitors)
+
+class ScratchpadArtyTrenzConfig extends Config(
+  new With32KBDTIM ++
+  new WithArtyTrenzScratchpadTweaks ++
+  new chipyard.config.WithL2TLBs(0) ++
+  new testchipip.soc.WithNoScratchpads ++
+  new freechips.rocketchip.subsystem.WithNBanks(0) ++
+  new freechips.rocketchip.subsystem.WithNoMemPort ++
+  new freechips.rocketchip.rocket.WithScratchpadsOnly ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
