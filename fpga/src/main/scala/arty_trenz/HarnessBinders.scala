@@ -44,7 +44,12 @@ class WithArtyTrenzJTAG extends HarnessBinder({
     port.io.TCK := harnessIO.TCK
     port.io.TDI := harnessIO.TDI
     port.io.TMS := harnessIO.TMS
-    port.io.reset.foreach(_ := th.referenceReset)
+    // Keep the JTAG TAP out of the SoC reset domain. Tying it to
+    // referenceReset was holding the TAP in reset whenever pllReset stayed
+    // asserted (e.g. POR/MIG not releasing), which manifests as openocd
+    // seeing "all ones" / DTM version 15. OpenOCD does its own TLR via
+    // 5x TCK+TMS=1 at session start, so an explicit reset isn't needed.
+    port.io.reset.foreach(_ := false.B)
 
     ath.sdc.addClock("JTCK", IOPin(harnessIO.TCK), 10)
     ath.sdc.addGroup(clocks = Seq("JTCK"))
