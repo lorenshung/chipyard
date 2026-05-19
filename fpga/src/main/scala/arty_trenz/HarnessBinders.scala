@@ -33,9 +33,14 @@ class WithArtyTrenzUART extends HarnessBinder({
   }
 })
 
-// External JTAG on PMod J5 (8-pin 2x4). Wire your dongle:
-//   TCK -> V15 (J5-1), TMS -> V14 (J5-2), TDI -> U15 (J5-3),
-//   TDO -> V13 (J5-4), GND -> J5-5/11, VCC -> J5-6/12.
+// External JTAG on the J11 40-pin header (bank 16, LVCMOS33). Moved off
+// J5/bank 13 because VCCO_BANK_13 isn't supplied on this carrier — the
+// pins float at ~0.8V and LVCMOS33 drivers can't produce valid levels.
+// Bank 16 is powered (same bank used by SerialTL pins).
+//   TCK -> F13 (J11-5), TMS -> D21 (J11-6),
+//   TDI -> D14 (J11-7), TDO -> F16 (J11-8).
+// GND: any carrier GND (J5-5, mounting hole, or a J11 GND pin verified
+// via continuity test).
 class WithArtyTrenzJTAG extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: JTAGPort, chipId: Int) => {
     val ath = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[ArtyTrenzHarness]
@@ -55,10 +60,10 @@ class WithArtyTrenzJTAG extends HarnessBinder({
     ath.sdc.addGroup(clocks = Seq("JTCK"))
     ath.xdc.clockDedicatedRouteFalse(IOPin(harnessIO.TCK))
     val packagePinsWithPackageIOs = Seq(
-      ("V15", IOPin(harnessIO.TCK)),
-      ("V14", IOPin(harnessIO.TMS)),
-      ("U15", IOPin(harnessIO.TDI)),
-      ("V13", IOPin(harnessIO.TDO))
+      ("F13", IOPin(harnessIO.TCK)),
+      ("D21", IOPin(harnessIO.TMS)),
+      ("D14", IOPin(harnessIO.TDI)),
+      ("F16", IOPin(harnessIO.TDO))
     )
 
     packagePinsWithPackageIOs foreach { case (pin, io) => {
