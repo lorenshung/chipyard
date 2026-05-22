@@ -1,0 +1,14 @@
+===================================
+Configuration Memory information
+===================================
+File Format        MCS
+Interface          SPIX4
+Size               256M
+Start Address      0x00000000
+End Address        0x0FFFFFFF
+Checksum           0xBE83FB58
+Fill Value         0xFF
+
+Addr1         Addr2         Date                    File(s)                                                            Checksum
+0x00000000    0x0034D21A    Dec 17 13:11:12 2025    ./prebuilt/hardware/02_200_1ix_1gb/te0712-rd_02_200_1ix_1gb.bit    0x0321443D
+File Checksum Total                                                                                                    0x0321443D

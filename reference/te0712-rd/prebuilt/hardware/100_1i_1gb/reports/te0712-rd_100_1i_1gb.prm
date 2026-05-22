@@ -1,0 +1,11 @@
+===================================
+Configuration Memory information
+===================================
+File Format        MCS
+Interface          SPIX4
+Size               32M
+Start Address      0x00000000
+End Address        0x01FFFFFF
+
+Addr1         Addr2         Date                    File(s)
+0x00000000    0x0020D35B    Dec 17 13:26:12 2025    /builds/trenz/te0712/te0712-rd/vivado/te0712-rd.runs/impl_1/msys_wrapper.bit
