@@ -1,0 +1,59 @@
+{
+  "_doc": "Chipyard resource-attribute injection rules. Categories selected via inject_resource_attrs.py --only <list>. Module keys are fnmatch patterns; a file matches if its stem OR any module declared inside it matches.",
+
+  "categories": {
+
+    "_doc_dsp": "Move every multiply candidate toward DSP48. auto_dsp_module puts (* use_dsp48 = yes *) on any module whose body contains a multiply op; auto_dsp adds the same attribute to any assign/wire = ... * ...; expression. Explicit 'modules' entries pin specific Saturn multipliers (mul8 is opted out because DSP is 27x18 and 8x8 wastes a slice).",
+    "dsp": {
+      "defaults": {
+        "auto_dsp":        true,
+        "auto_dsp_module": true
+      },
+      "modules": {
+        "Multiplier":   { "use_dsp48": "yes" },
+        "Multiplier_1": { "use_dsp48": "yes" },
+        "Multiplier_2": { "use_dsp48": "yes" },
+        "Multiplier_4": { "use_dsp48": "no"  }
+      }
+    },
+
+    "_doc_bram": "Steer cache arrays to BRAM (overrides Vivado's LUTRAM choice on icache_tag); auto_ram classifies every other reg array by size+read-pattern: async-read -> distributed, sync-read >=2048b -> block, else auto.",
+    "bram": {
+      "defaults": {
+        "auto_ram":      true,
+        "bram_min_bits": 2048
+      },
+      "modules": {
+        "split_rockettile_dcache_data_arrays_0_ext": {
+          "ram_style": "block",
+          "rw_addr_collision": "yes"
+        },
+        "split_rockettile_icache_tag_array_ext": {
+          "ram_style": "block"
+        },
+        "split_rockettile_icache_data_arrays_0_ext": {
+          "ram_style": "block",
+          "rw_addr_collision": "yes"
+        }
+      }
+    },
+
+    "_doc_cdc": "CDC synchronizer hardening. ASYNC_REG packs the d3 chain into one slice for MTBF, shreg_extract=no prevents SRL packing that would break it. Off by default — turn on via --only cdc.",
+    "cdc": {
+      "modules": {
+        "AsyncResetSynchronizer*": {
+          "async_reg":     "TRUE",
+          "shreg_extract": "no"
+        }
+      }
+    },
+
+    "_doc_blanket": "Uniform sledgehammer: stamp (* use_dsp48 = yes *) and (* ram_style = block *) on EVERY module decl in EVERY file. Vivado ignores the attribute on modules without applicable structures and falls back gracefully when block is incompatible. Use INJECT=blanket alone or stack INJECT=dsp,bram,blanket for max coverage (explicit per-signal opt-outs in dsp still win at signal scope).",
+    "blanket": {
+      "defaults": {
+        "module_all_dsp": true,
+        "module_all_ram": "block"
+      }
+    }
+  }
+}

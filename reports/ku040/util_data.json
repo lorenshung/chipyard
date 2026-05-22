@@ -1,0 +1,24 @@
+{
+  "strategies": {
+    "baseline": {
+      "Total LUTs": 122767,
+      "Logic LUTs": 121333,
+      "LUTRAMs": 1434,
+      "SRLs": 0,
+      "FFs": 37378,
+      "RAMB36": 0,
+      "RAMB18": 48,
+      "DSP Blocks": 163
+    },
+    "dsp": {
+      "Total LUTs": 117204,
+      "Logic LUTs": 115962,
+      "LUTRAMs": 1242,
+      "SRLs": 0,
+      "FFs": 36448,
+      "RAMB36": 0,
+      "RAMB18": 56,
+      "DSP Blocks": 1450
+    }
+  }
+}

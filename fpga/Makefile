@@ -125,6 +125,19 @@ ifeq ($(SUB_PROJECT),datastorm)
 	BOARD			  ?= trenz_datastorm
 	FPGA_BRAND        ?= altera
 endif
+ifeq ($(SUB_PROJECT),ku040)
+	SBT_PROJECT       ?= chipyard_fpga
+	MODEL             ?= Ku040ScratchpadHarness
+	VLOG_MODEL        ?= Ku040ScratchpadHarness
+	MODEL_PACKAGE     ?= chipyard.fpga.ku040
+	CONFIG            ?= Ku040GemminiConfig
+	CONFIG_PACKAGE    ?= chipyard.fpga.ku040
+	GENERATOR_PACKAGE ?= chipyard
+	TB                ?= none # unused
+	TOP               ?= ChipTop
+	BOARD             ?= alinx_axku040
+	FPGA_BRAND        ?= xilinx
+endif
 
 export USE_CHISEL6=1
 
@@ -171,7 +184,26 @@ all_vsrcs := \
 #########################################################################################
 # combine all sources into single .f
 synth_list_f := $(build_dir)/$(long_name).vsrcs.f
-$(synth_list_f): $(sim_common_files) $(all_vsrcs)
+
+# resource-attribute injection (gen-collateral -> Vivado).
+# INJECT picks which categories from attrs.json to apply.
+#   make ... INJECT=none        no attributes (clean baseline)
+#   make ... INJECT=dsp         only DSP attributes
+#   make ... INJECT=bram        only BRAM/RAM attributes
+#   make ... INJECT=dsp,bram    both
+#   make ... INJECT=all         every category in attrs.json
+comma         := ,
+INJECT        ?= none
+INJECTOR      := $(base_dir)/fpga/scripts/inject_resource_attrs.py
+INJECT_CFG    := $(base_dir)/fpga/scripts/attrs.json
+INJECT_STAMP  := $(build_dir)/.attrs.$(subst $(comma),_,$(INJECT)).stamp
+
+$(INJECT_STAMP): $(sim_common_files) $(INJECTOR) $(INJECT_CFG)
+	rm -f $(build_dir)/.attrs.*.stamp
+	python3 $(INJECTOR) --collateral $(GEN_COLLATERAL_DIR) --config $(INJECT_CFG) --only $(INJECT)
+	@touch $@
+
+$(synth_list_f): $(sim_common_files) $(all_vsrcs) $(INJECT_STAMP)
 	rm -f $@
 	$(foreach file,$(all_vsrcs),echo "$(file)" >> $@;)
 	cat $(sim_common_files) >> $@
