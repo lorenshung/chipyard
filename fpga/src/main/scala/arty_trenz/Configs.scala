@@ -17,7 +17,7 @@ class WithNoDesignKey extends Config((site, here, up) => {
   case DesignKey => (p: Parameters) => new SimpleLazyRawModule()(p)
 })
 
-// Full BigRocket with the on-SoM 1 GB DDR3L behind ExtMem.
+// Full BigRocket with the on-SoM 1 GB DDR3 behind ExtMem.
 // The harness (ArtyTrenzHarness) unconditionally places the DDR overlay,
 // so this config must include WithExtMemSize + WithTLBackingMemory.
 class WithArtyTrenzTweaks(freqMHz: Double = 50) extends Config(
@@ -31,7 +31,7 @@ class WithArtyTrenzTweaks(freqMHz: Double = 50) extends Config(
   new chipyard.harness.WithAllClocksFromHarnessClockInstantiator ++
   new chipyard.clocking.WithPassthroughClockGenerator ++
   new chipyard.config.WithTLBackingMemory ++ // FPGA-shells converts the AXI to TL for us
-  new freechips.rocketchip.subsystem.WithExtMemSize(BigInt(1) << 30) ++ // 1 GB on TE0713-01
+  new freechips.rocketchip.subsystem.WithExtMemSize(BigInt(1) << 30) ++ // 1 GB on TE0712-03-72C36
   new freechips.rocketchip.subsystem.WithoutTLMonitors)
 
 class RocketArtyTrenzConfig extends Config(

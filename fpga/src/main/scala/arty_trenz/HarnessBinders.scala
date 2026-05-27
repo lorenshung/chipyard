@@ -16,14 +16,14 @@ import chipyard.harness._
 import chipyard.iobinders._
 import testchipip.serdes._
 
-// USB-UART on the TE0705 carrier MIO group. RX = P19, TX = U18.
+// USB-UART on the TE0705 carrier MIO group. RX = P16, TX = U18.
 class WithArtyTrenzUART extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: UARTPort, chipId: Int) => {
     val ath = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[ArtyTrenzHarness]
     val harnessIO = IO(chiselTypeOf(port.io)).suggestName("uart")
     harnessIO <> port.io
     val packagePinsWithPackageIOs = Seq(
-      ("P19", IOPin(harnessIO.rxd)),
+      ("P16", IOPin(harnessIO.rxd)),
       ("U18", IOPin(harnessIO.txd)))
     packagePinsWithPackageIOs foreach { case (pin, io) => {
       ath.xdc.addPackagePin(io, pin)
@@ -33,14 +33,10 @@ class WithArtyTrenzUART extends HarnessBinder({
   }
 })
 
-// External JTAG on the J11 40-pin header (bank 16, LVCMOS33). Moved off
-// J5/bank 13 because VCCO_BANK_13 isn't supplied on this carrier — the
-// pins float at ~0.8V and LVCMOS33 drivers can't produce valid levels.
-// Bank 16 is powered (same bank used by SerialTL pins).
-//   TCK -> F13 (J11-5), TMS -> D21 (J11-6),
-//   TDI -> D14 (J11-7), TDO -> F16 (J11-8).
-// GND: any carrier GND (J5-5, mounting hole, or a J11 GND pin verified
-// via continuity test).
+// External JTAG on the TE0705 PMOD J5 header (bank 14, LVCMOS33).
+//   TCK -> W20 (J5-1), TMS -> V20 (J5-2),
+//   TDI -> W19 (J5-3), TDO -> U20 (J5-4).
+// J5-9/10 are GND; J5-11/12 are VIOTB.
 class WithArtyTrenzJTAG extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: JTAGPort, chipId: Int) => {
     val ath = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[ArtyTrenzHarness]
@@ -60,10 +56,10 @@ class WithArtyTrenzJTAG extends HarnessBinder({
     ath.sdc.addGroup(clocks = Seq("JTCK"))
     ath.xdc.clockDedicatedRouteFalse(IOPin(harnessIO.TCK))
     val packagePinsWithPackageIOs = Seq(
-      ("F13", IOPin(harnessIO.TCK)),
-      ("D21", IOPin(harnessIO.TMS)),
-      ("D14", IOPin(harnessIO.TDI)),
-      ("F16", IOPin(harnessIO.TDO))
+      ("W20", IOPin(harnessIO.TCK)),
+      ("V20", IOPin(harnessIO.TMS)),
+      ("W19", IOPin(harnessIO.TDI)),
+      ("U20", IOPin(harnessIO.TDO))
     )
 
     packagePinsWithPackageIOs foreach { case (pin, io) => {
@@ -134,7 +130,7 @@ class WithArtyTrenzSerialTLToGPIO extends HarnessBinder({
   }
 })
 
-// Backing memory for ExtTLMem -> the on-SoM DDR3L via the MIG.
+// Backing memory for ExtTLMem -> the on-SoM DDR3 via the MIG.
 class WithArtyTrenzDDRTL extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: TLMemPort, chipId: Int) => {
     val ath = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[ArtyTrenzHarness]
