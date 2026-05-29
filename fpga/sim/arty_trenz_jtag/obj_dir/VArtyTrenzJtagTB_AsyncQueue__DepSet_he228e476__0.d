@@ -1,0 +1,3 @@
+VArtyTrenzJtagTB_AsyncQueue__DepSet_he228e476__0.o: \
+ VArtyTrenzJtagTB_AsyncQueue__DepSet_he228e476__0.cpp \
+ VArtyTrenzJtagTB__pch.h VArtyTrenzJtagTB_AsyncQueue.h

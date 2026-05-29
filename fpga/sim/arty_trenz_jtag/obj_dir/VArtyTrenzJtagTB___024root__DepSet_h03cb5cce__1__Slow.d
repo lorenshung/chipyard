@@ -1,0 +1,4 @@
+VArtyTrenzJtagTB___024root__DepSet_h03cb5cce__1__Slow.o: \
+ VArtyTrenzJtagTB___024root__DepSet_h03cb5cce__1__Slow.cpp \
+ VArtyTrenzJtagTB__pch.h VArtyTrenzJtagTB__Syms.h \
+ VArtyTrenzJtagTB___024root.h

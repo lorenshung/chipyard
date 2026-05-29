@@ -1,0 +1,20 @@
+verilated_fst_c.o: \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/verilated_fst_c.cpp \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/verilated.h \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/verilatedos.h \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/verilated_config.h \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/verilated_types.h \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/verilated_funcs.h \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/verilated_fst_c.h \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/verilated_trace.h \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/gtkwave/fastlz.c \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/gtkwave/fastlz.h \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/gtkwave/fastlz.c \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/gtkwave/fstapi.c \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/gtkwave/fst_config.h \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/gtkwave/fstapi.h \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/gtkwave/lz4.h \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/gtkwave/lz4.c \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/verilated_trace_imp.h \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/verilated_intrinsics.h \
+ /scratch/lorenhung/chipyard/.conda-env/share/verilator/include/verilated_threads.h
