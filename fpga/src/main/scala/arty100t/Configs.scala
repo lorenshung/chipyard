@@ -33,6 +33,7 @@ class WithArty100TTweaks(freqMHz: Double = 50) extends Config(
   new chipyard.config.WithUniformBusFrequencies(freqMHz) ++
   new chipyard.harness.WithAllClocksFromHarnessClockInstantiator ++
   new chipyard.clocking.WithPassthroughClockGenerator ++
+  new testchipip.soc.WithMbusScratchpad(base = 0x80000000L, size = (BigInt(1) << 15))++
   new freechips.rocketchip.subsystem.WithNoMemPort ++
   new freechips.rocketchip.subsystem.WithoutTLMonitors)
 
