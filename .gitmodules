@@ -1,6 +1,7 @@
 [submodule "fpga/fpga-shells"]
 	path = fpga/fpga-shells
-	url = https://github.com/chipsalliance/rocket-chip-fpga-shells.git
+	url = https://github.com/lorenshung/fpga-shells.git
+	branch = trenz-attempt-3
 [submodule "generators/bar-fetchers"]
 	path = generators/bar-fetchers
 	url = https://github.com/ucb-bar/bar-fetchers.git
@@ -163,3 +164,7 @@
 [submodule "generators/radiance"]
 	path = generators/radiance
 	url = https://github.com/ucb-bar/radiance.git
+[submodule "fpga/fpga/fpga-shells"]
+	path = fpga/fpga/fpga-shells
+	url = https://github.com/lorenshung/fpga-shells.git
+	branch = trenz-attempt-3
