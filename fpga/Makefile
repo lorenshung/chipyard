@@ -86,6 +86,19 @@ ifeq ($(SUB_PROJECT),arty100t)
 	BOARD             ?= arty_a7_100
 	FPGA_BRAND        ?= xilinx
 endif
+ifeq ($(SUB_PROJECT),ku040)
+	SBT_PROJECT       ?= chipyard_fpga
+	MODEL             ?= KU040Harness
+	VLOG_MODEL        ?= KU040Harness
+	MODEL_PACKAGE     ?= chipyard.fpga.ku040
+	CONFIG            ?= RocketKU040Config
+	CONFIG_PACKAGE    ?= chipyard.fpga.ku040
+	GENERATOR_PACKAGE ?= chipyard
+	TB                ?= none # unused
+	TOP               ?= ChipTop
+	BOARD             ?= custom_ku040
+	FPGA_BRAND        ?= xilinx
+endif
 ifeq ($(SUB_PROJECT),datastorm)
 	SBT_PROJECT       ?= chipyard_fpga
 	MODEL             ?= DatastormHarness

@@ -1,5 +1,5 @@
 // See LICENSE for license details.
-package chipyard.fpga.arty100t
+package chipyard.fpga.ku040
 
 import org.chipsalliance.cde.config._
 import freechips.rocketchip.subsystem._
@@ -22,11 +22,12 @@ class WithNoDesignKey extends Config((site, here, up) => {
   case DesignKey => (p: Parameters) => new SimpleLazyRawModule()(p)
 })
 
-class WithArty100TTweaks(freqMHz: Double = 50) extends Config(
-  new WithArty100TDDRTL ++
-  new WithArty100TPMODUART ++
-  new WithArty100TUARTTSI ++
-  new WithArty100TJTAG ++
+// The sifive UART (Zephyr console) gets the wired PMOD pins D3/D4; UART-TSI
+// is parked on spare pins A4/B4 until needed.
+class WithKU040Tweaks(freqMHz: Double = 50) extends Config(
+  new WithKU040UART ++
+  new WithKU040UARTTSI ++
+  new WithKU040JTAG ++
   new WithNoDesignKey ++
   new testchipip.tsi.WithUARTTSIClient ++
   new chipyard.harness.WithSerialTLTiedOff ++
@@ -34,18 +35,16 @@ class WithArty100TTweaks(freqMHz: Double = 50) extends Config(
   new chipyard.config.WithUniformBusFrequencies(freqMHz) ++
   new chipyard.harness.WithAllClocksFromHarnessClockInstantiator ++
   new chipyard.clocking.WithPassthroughClockGenerator ++
-  new chipyard.config.WithTLBackingMemory ++
-  new freechips.rocketchip.subsystem.WithExtMemSize(BigInt(1) << 30) ++
-  // new testchipip.soc.WithMbusScratchpad(base = 0x80000000L, size = (BigInt(1) << 15))++
-  // new freechips.rocketchip.subsystem.WithNoMemPort ++
+  new testchipip.soc.WithMbusScratchpad(base = 0x80000000L, size = (BigInt(1) << 15)) ++
+  new freechips.rocketchip.subsystem.WithNoMemPort ++
   new freechips.rocketchip.subsystem.WithoutTLMonitors)
 
-class RocketArty100TConfig extends Config(
-  new WithArty100TTweaks ++
+class RocketKU040Config extends Config(
+  new WithKU040Tweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
 
-class NoCoresArty100TConfig extends Config(
-  new WithArty100TTweaks ++
+class NoCoresKU040Config extends Config(
+  new WithKU040Tweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.NoCoresConfig)
