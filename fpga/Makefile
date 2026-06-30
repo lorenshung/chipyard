@@ -96,7 +96,7 @@ ifeq ($(SUB_PROJECT),ku040)
 	GENERATOR_PACKAGE ?= chipyard
 	TB                ?= none # unused
 	TOP               ?= ChipTop
-	BOARD             ?= custom_ku040
+	BOARD             ?= ku040
 	FPGA_BRAND        ?= xilinx
 endif
 ifeq ($(SUB_PROJECT),datastorm)

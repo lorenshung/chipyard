@@ -19,6 +19,16 @@ import chipyard.harness._
 import chipyard.iobinders._
 import testchipip.serdes._
 
+class WithArty100TDDRTL extends HarnessBinder({
+  case (th: HasHarnessInstantiators, port: TLMemPort, chipId: Int) => {
+    val artyTh = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[Arty100THarness]
+    val bundles = artyTh.ddrClient.out.map(_._1)
+    val ddrClientBundle = Wire(new HeterogeneousBag(bundles.map(_.cloneType)))
+    bundles.zip(ddrClientBundle).foreach { case (bundle, io) => bundle <> io }
+    ddrClientBundle <> port.io
+  }
+})
+
 class WithArty100TUARTTSI extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: UARTTSIPort, chipId: Int) => {
     val ath = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[Arty100THarness]
@@ -54,16 +64,6 @@ class WithArty100TUART(rxdPin: String = "A9", txdPin: String = "D10") extends Ha
 
 // Maps the UART device to PMOD JD pins 3/7
 class WithArty100TPMODUART extends WithArty100TUART("V18", "Y18")
-
-class WithArty100TDDRTL extends HarnessBinder({
-  case (th: HasHarnessInstantiators, port: TLMemPort, chipId: Int) => {
-    val artyTh = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[Arty100THarness]
-    val bundles = artyTh.ddrClient.out.map(_._1)
-    val ddrClientBundle = Wire(new HeterogeneousBag(bundles.map(_.cloneType)))
-    bundles.zip(ddrClientBundle).foreach { case (bundle, io) => bundle <> io }
-    ddrClientBundle <> port.io
-  }
-})
 
 class WithArty100TJTAG extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: JTAGPort, chipId: Int) => {

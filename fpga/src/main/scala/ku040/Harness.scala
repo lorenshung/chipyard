@@ -15,7 +15,7 @@ import sifive.fpgashells.clocks._
 import chipyard._
 import chipyard.harness._
 
-class KU040Harness(override implicit val p: Parameters) extends CustomKU040Shell {
+class KU040Harness(override implicit val p: Parameters) extends KU040Shell {
   def dp = designParameters
 
   val clockOverlay = dp(ClockInputOverlayKey).map(_.place(ClockInputDesignInput())).head
