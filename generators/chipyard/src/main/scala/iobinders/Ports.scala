@@ -40,6 +40,9 @@ case class GPIOPinsPort    (val getIO: () => GPIOPortIO, val gpioId: Int)
 case class I2CPort         (val getIO: () => sifive.blocks.devices.i2c.I2CPort)
     extends Port[sifive.blocks.devices.i2c.I2CPort]
 
+case class OspiPort        (val getIO: () => ospi.SensorIO)
+    extends Port[ospi.SensorIO]
+
 case class UARTPort        (val getIO: () => UARTPortIO, val uartNo: Int, val freqMHz: Int)
     extends Port[UARTPortIO]
 

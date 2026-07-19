@@ -213,6 +213,18 @@ class WithI2CPunchthrough extends OverrideIOBinder({
   }
 })
 
+class WithOspiPunchthrough extends OverrideIOBinder({
+  (system: ospi.CanHavePeripheryOspi) => {
+    val ports = system.ospi_sensor.map { sensorMV =>
+      val sensor: ospi.SensorIO = sensorMV // unwrap the InModuleBody ModuleValue via the implicit
+      val io_ospi = IO(chiselTypeOf(sensor)).suggestName("ospi_sensor")
+      io_ospi <> sensor
+      OspiPort(() => io_ospi)
+    }.toSeq
+    (ports, Nil)
+  }
+})
+
 // DOC include start: WithUARTIOCells
 class WithUARTIOCells extends OverrideIOBinder({
   (system: HasPeripheryUART) => {

@@ -44,6 +44,11 @@ class RocketKU040Config extends Config(
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
 
+class SaturnKU040Config extends Config(
+  new WithKU040Tweaks ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.REFV256D128RocketConfig)
+
 class NoCoresKU040Config extends Config(
   new WithKU040Tweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2
