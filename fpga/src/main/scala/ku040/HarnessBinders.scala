@@ -22,7 +22,8 @@ import testchipip.serdes._
 // as on the Alinx KU040 FMC pins.
 //
 // UART-TSI is parked on spare bank-68 pins A4/B4 (unconnected for now); the
-// PMOD UART pins D3/D4 carry the sifive UART (WithKU040UART below).
+// PMOD UART pins D3/D4 carry the sifive UART (WithKU040UART below). OSPI configs move RX to C3
+// so the P-side clock-capable D3 pin can carry the sensor PCLK.
 class WithKU040UARTTSI(rxdPin: String = "A4", txdPin: String = "B4") extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: UARTTSIPort, chipId: Int) => {
     val kth = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[KU040Harness]
@@ -109,12 +110,12 @@ class WithKU040I2C(sclPin: String = "A1", sdaPin: String = "A2") extends Harness
   }
 })
 
-// Default allocation uses otherwise-unused bank-68 pins; C3 is a global-clock-capable PCLK input.
+// Default allocation uses otherwise-unused bank-68 pins; D3 is a P-side global-clock-capable input.
 // All pins are valid for xcku040-sfva784 and use 1.8 V I/O, but the mapping must still be matched to
 // the carrier/header schematic before connecting a camera.
 class WithKU040Ospi(
   dataPins: Seq[String] = Seq("H3", "H4", "G2", "H2", "E2", "F2", "D1", "E1"),
-  pclkPin: String = "C3",
+  pclkPin: String = "D3",
   fvldPin: String = "E3",
   lvldPin: String = "F3",
   intrPin: String = "F4",

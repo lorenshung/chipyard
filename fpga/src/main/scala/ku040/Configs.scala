@@ -24,8 +24,8 @@ class WithNoDesignKey extends Config((site, here, up) => {
 
 // The sifive UART (Zephyr console) gets the wired PMOD pins D3/D4; UART-TSI
 // is parked on spare pins A4/B4 until needed.
-class WithKU040Tweaks(freqMHz: Double = 50) extends Config(
-  new WithKU040UART ++
+class WithKU040Tweaks(freqMHz: Double = 50, uartRxdPin: String = "D3") extends Config(
+  new WithKU040UART(rxdPin = uartRxdPin) ++
   new WithKU040UARTTSI ++
   new WithKU040JTAG ++
   new WithNoDesignKey ++
@@ -54,7 +54,7 @@ class RocketKU040Config extends Config(
 
 class RocketKU040OspiConfig extends Config(
   new WithKU040OspiPeriphery ++
-  new WithKU040Tweaks ++
+  new WithKU040Tweaks(uartRxdPin = "C3") ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
 
@@ -65,7 +65,7 @@ class SaturnKU040Config extends Config(
 
 class SaturnKU040OspiConfig extends Config(
   new WithKU040OspiPeriphery ++
-  new WithKU040Tweaks ++
+  new WithKU040Tweaks(uartRxdPin = "C3") ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.REFV256D128RocketConfig)
 
