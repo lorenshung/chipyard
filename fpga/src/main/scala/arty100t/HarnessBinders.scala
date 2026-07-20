@@ -95,7 +95,7 @@ class WithArty100TJTAG extends HarnessBinder({
 
 // Brings the SoC's I2C controller out to two FPGA pins as an open-drain 2-wire bus.
 // One TLI2C controller == one SCL/SDA bus that addresses many slaves (HM01B0 @ 0x24 + others).
-// Placed in WithArty100TTweaks (leftmost) so it overrides the default chipyard.harness.WithI2CTiedOff.
+// Placed in WithArty100TOspiPeriphery so it overrides the default chipyard.harness.WithI2CTiedOff.
 // PINS: board-specific (xc7a100t-fgg484). I2C needs pull-ups: addPullup enables the weak internal
 // pull-up; external ~4.7k is recommended for reliable I2C rise times.
 class WithArty100TI2C(sclPin: String = "A18", sdaPin: String = "A19") extends HarnessBinder({
@@ -115,41 +115,40 @@ class WithArty100TI2C(sclPin: String = "A18", sdaPin: String = "A19") extends Ha
   }
 })
 
-// Brings the HM01B0 capture peripheral's parallel-video pins out to the board.
-// PINS are a PLACEHOLDER Arty A7-100T (CSG324) allocation: D0-7 on PMOD JA, control on PMOD JC.
-// VERIFY/adjust against your board master XDC before generating a bitstream. PCLK is an
-// asynchronous sensor-driven clock landing on a (non-clock-capable) PMOD pin -> clockDedicatedRouteFalse.
-class WithArty100TOspi extends HarnessBinder({
+// Brings the HM01B0 capture peripheral's parallel-video pins out to the xc7a100t-fgg484 shell.
+// These defaults are buildable package-pin assignments, but must be matched to the carrier wiring.
+// The sensor is limited to 3.0 V IOVDD, so a level shifter is required at this 3.3 V interface.
+class WithArty100TOspi(
+  dataPins: Seq[String] = Seq("B17", "B18", "A14", "A13", "D16", "E16", "E17", "F16"),
+  pclkPin: String = "B15",
+  fvldPin: String = "A16",
+  lvldPin: String = "B16",
+  intrPin: String = "F19",
+  mclkPin: String = "A15",
+  trigPin: String = "F20") extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: OspiPort, chipId: Int) => {
     val ath = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[Arty100THarness]
+    require(dataPins.size == 8, "HM01B0 8-bit mode requires exactly eight data pins")
 
     val harnessIO = IO(chiselTypeOf(port.io)).suggestName("ospi")
     harnessIO <> port.io
 
-    // D0-D7
-    val dataPins = Seq(
-      "B17", // D0
-      "B18", // D1
-      "A14", // D2
-      "A13", // D3
-      "D16", // D4
-      "E16", // D5
-      "E17", // D6
-      "F16"  // D7
-    )
-
     dataPins.zipWithIndex.foreach { case (pin, i) =>
-      ath.xdc.addPackagePin(IOPin(harnessIO.d, i), pin)
-      ath.xdc.addIOStandard(IOPin(harnessIO.d, i), "LVCMOS33")
+      val io = IOPin(harnessIO.d, i)
+      ath.xdc.addPackagePin(io, pin)
+      ath.xdc.addIOStandard(io, "LVCMOS33")
     }
 
+    val pclkIO = IOPin(harnessIO.pclk)
+    ath.xdc.addPackagePin(pclkIO, pclkPin)
+    ath.xdc.addIOStandard(pclkIO, "LVCMOS33")
+
     val ctrlPins = Seq(
-      ("B15", IOPin(harnessIO.pclk)), // PCLK
-      ("A16", IOPin(harnessIO.fvld)), // FVLD / FLVD
-      ("B16", IOPin(harnessIO.lvld)), // LVLD
-      ("F19", IOPin(harnessIO.intr)), // INT
-      ("A15", IOPin(harnessIO.mclk)), // MCLK
-      ("F20", IOPin(harnessIO.trig))  // TRIG
+      (fvldPin, IOPin(harnessIO.fvld)), // FLVD (bundle keeps the historical `fvld` spelling)
+      (lvldPin, IOPin(harnessIO.lvld)), // LVLD
+      (intrPin, IOPin(harnessIO.intr)), // INT
+      (mclkPin, IOPin(harnessIO.mclk)), // MCLK
+      (trigPin, IOPin(harnessIO.trig))  // TRIG
     )
 
     ctrlPins.foreach { case (pin, io) =>
@@ -157,6 +156,10 @@ class WithArty100TOspi extends HarnessBinder({
       ath.xdc.addIOStandard(io, "LVCMOS33")
     }
 
-    ath.xdc.clockDedicatedRouteFalse(IOPin(harnessIO.pclk))
+    ath.sdc.addClock("ospi_pclk", pclkIO, 36)
+    ath.sdc.addGroup(clocks = Seq("ospi_pclk"))
+    // B15 is not a clock-capable package pin. The override permits routing at the HM01B0's low
+    // pixel-clock rate; override pclkPin with a carrier-connected MRCC/SRCC pin when available.
+    ath.xdc.clockDedicatedRouteFalse(pclkIO)
   }
 })

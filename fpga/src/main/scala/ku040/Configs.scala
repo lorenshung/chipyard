@@ -39,12 +39,32 @@ class WithKU040Tweaks(freqMHz: Double = 50) extends Config(
   new freechips.rocketchip.subsystem.WithNoMemPort ++
   new freechips.rocketchip.subsystem.WithoutTLMonitors)
 
+/** Opt-in HM01B0 capture, including the I2C controller used to configure the sensor. */
+class WithKU040OspiPeriphery extends Config(
+  new WithKU040I2C ++
+  new WithKU040Ospi ++
+  new chipyard.iobinders.WithOspiPunchthrough ++
+  new ospi.WithOspiCapture ++
+  new chipyard.config.WithI2C)
+
 class RocketKU040Config extends Config(
   new WithKU040Tweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
 
+class RocketKU040OspiConfig extends Config(
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
 class SaturnKU040Config extends Config(
+  new WithKU040Tweaks ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.REFV256D128RocketConfig)
+
+class SaturnKU040OspiConfig extends Config(
+  new WithKU040OspiPeriphery ++
   new WithKU040Tweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.REFV256D128RocketConfig)

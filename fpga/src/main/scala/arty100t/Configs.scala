@@ -27,11 +27,6 @@ class WithArty100TTweaks(freqMHz: Double = 50) extends Config(
   new WithArty100TPMODUART ++
   new WithArty100TUARTTSI ++
   new WithArty100TJTAG ++
-  new chipyard.config.WithI2C ++                 // TLI2C master @0x10040000: one 2-wire bus, many slaves (HM01B0 0x24 + others)
-  new WithArty100TI2C ++                         // route I2C SCL/SDA to FPGA pins (overrides default WithI2CTiedOff)
-  new ospi.WithOspiCapture ++                    // HM01B0 parallel-video capture peripheral @0x10080000 (MMIO read-FIFO)
-  new chipyard.iobinders.WithOspiPunchthrough ++ // expose the OSPI sensor pins at the chip boundary
-  new WithArty100TOspi ++                        // route the OSPI sensor pins to FPGA (PMOD) pins
   new WithNoDesignKey ++
   new testchipip.tsi.WithUARTTSIClient ++
   new chipyard.harness.WithSerialTLTiedOff ++
@@ -45,7 +40,21 @@ class WithArty100TTweaks(freqMHz: Double = 50) extends Config(
   // new freechips.rocketchip.subsystem.WithNoMemPort ++
   new freechips.rocketchip.subsystem.WithoutTLMonitors)
 
+/** Opt-in HM01B0 capture, including the I2C controller used to configure the sensor. */
+class WithArty100TOspiPeriphery extends Config(
+  new WithArty100TI2C ++
+  new WithArty100TOspi ++
+  new chipyard.iobinders.WithOspiPunchthrough ++
+  new ospi.WithOspiCapture ++
+  new chipyard.config.WithI2C)
+
 class RocketArty100TConfig extends Config(
+  new WithArty100TTweaks ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
+class RocketArty100TOspiConfig extends Config(
+  new WithArty100TOspiPeriphery ++
   new WithArty100TTweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
