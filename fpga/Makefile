@@ -201,6 +201,16 @@ debug-bitstream: $(build_dir)/obj/post_synth.dcp
 			$(fpga_common_script_dir)
 
 #########################################################################################
+# RiskyBird additions
+#
+# All RiskyBird-owned collateral in this Chipyard checkout lives in
+# $(base_dir)/riskybird/. This is the only hook. See that directory's README.md.
+# Included last so every variable above (build_dir, synth_list_f, MODEL, BOARD,
+# CONFIG, SUB_PROJECT, FPGA_BRAND) is already defined.
+#########################################################################################
+-include $(base_dir)/riskybird/area.mk
+
+#########################################################################################
 # general cleanup rules
 #########################################################################################
 .PHONY: clean
