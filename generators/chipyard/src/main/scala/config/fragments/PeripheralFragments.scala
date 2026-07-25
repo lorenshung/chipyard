@@ -17,6 +17,7 @@ import sifive.blocks.devices.uart._
 import sifive.blocks.devices.spi._
 import sifive.blocks.devices.i2c._
 import sifive.blocks.devices.timer._
+import sifive.blocks.devices.pwm._
 
 import testchipip._
 
@@ -113,6 +114,31 @@ class WithI2C(address: BigInt = 0x10040000) extends Config((site, here, up) => {
     I2CParams(address = address, controlXType = AsynchronousCrossing(), intXType = AsynchronousCrossing())
   )
 })
+
+/**
+  * Config fragment for adding a SiFive PWM peripheral to the SoC.
+  *
+  * Zephyr's SiFive PWM driver uses comparator 0 to establish the period, so
+  * one four-comparator block exposes three independently usable PWM channels.
+  * RiskyBird therefore instantiates two blocks for four motor outputs.
+  */
+class WithPWM(address: BigInt = 0x10050000, ncmp: Int = 4) extends Config((site, here, up) => {
+  case PeripheryPWMKey => up(PeripheryPWMKey) ++ Seq(
+    PWMParams(address = address, ncmp = ncmp))
+})
+
+/**
+  * Logical peripherals required by the RiskyBird drone sensor/actuator base.
+  *
+  * This deliberately does not bind FPGA package pins. Board harness binders
+  * must be added only after the connector-to-package mapping and I/O voltage
+  * compatibility have been verified.
+  */
+class WithRiskyBirdDronePeriphery extends Config(
+  new WithPWM(address = 0x10051000) ++
+  new WithPWM(address = 0x10050000) ++
+  new WithGPIO(address = 0x10010000, width = 3) ++ // PMW3901 CS, reset, LED_N
+  new WithSPI(address = 0x10031000))
 
 class WithNoDebug extends Config((site, here, up) => {
   case DebugModuleKey => None

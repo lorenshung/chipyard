@@ -58,12 +58,33 @@ class RocketKU040OspiConfig extends Config(
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
 
+/**
+ * Logical full-drone SoC for the custom XCKU040-SFVA784-1-C board.
+ *
+ * The PMW3901 SPI/control GPIO and motor PWM package pins are deliberately
+ * unbound until the custom base-connector mapping and voltage domains are
+ * provided and verified.
+ */
+class RocketKU040DroneLogicConfig extends Config(
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks(uartRxdPin = "C3") ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
 class SaturnKU040Config extends Config(
   new WithKU040Tweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.REFV256D128RocketConfig)
 
 class SaturnKU040OspiConfig extends Config(
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks(uartRxdPin = "C3") ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.REFV256D128RocketConfig)
+
+class SaturnKU040DroneLogicConfig extends Config(
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
   new WithKU040OspiPeriphery ++
   new WithKU040Tweaks(uartRxdPin = "C3") ++
   new chipyard.config.WithBroadcastManager ++ // no l2

@@ -59,6 +59,18 @@ class RocketArty100TOspiConfig extends Config(
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
 
+/**
+ * Logical full-drone SoC: camera/I2C plus PMW3901 SPI/control GPIO and two PWM
+ * blocks. SPI, GPIO, and motor package pins remain intentionally unbound until
+ * an explicit Arty-to-base wiring definition is selected.
+ */
+class RocketArty100TDroneLogicConfig extends Config(
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithArty100TOspiPeriphery ++
+  new WithArty100TTweaks ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
 class NoCoresArty100TConfig extends Config(
   new WithArty100TTweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2

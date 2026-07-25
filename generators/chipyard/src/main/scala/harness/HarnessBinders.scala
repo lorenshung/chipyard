@@ -76,6 +76,13 @@ class WithSimSPIFlashModel(rdOnly: Boolean = true) extends HarnessBinder({
   }
 })
 
+/** Keep generic SPI inputs defined until a physical-board binder overrides this. */
+class WithSPITiedOff extends HarnessBinder({
+  case (th: HasHarnessInstantiators, port: SPIPort, chipId: Int) => {
+    port.io.dq.foreach(_.i := false.B)
+  }
+})
+
 class WithI2CTiedOff extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: I2CPort, chipId: Int) => {
     port.io <> DontCare
