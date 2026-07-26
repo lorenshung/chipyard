@@ -90,6 +90,51 @@ class SaturnKU040DroneLogicConfig extends Config(
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.REFV256D128RocketConfig)
 
+/** Rocket plus the default 16x16 int8 Gemmini.
+ *
+ *  An area-characterization target, not a deployable configuration: the KU040
+ *  shell has a 32 KiB scratchpad and no DRAM, so there is nothing for Gemmini to
+ *  DMA against. Synthesis-only measurement does not execute code, so the
+ *  resource cost is still meaningful.
+ *
+ *  The default mesh is 16x16, giving 256 MacUnit instances. That is the
+ *  population the `use_dsp` injection in riskybird/tcl/rb_attributes.tcl targets,
+ *  so this config is what makes the DSP-inference claim measurable without
+ *  moving any submodule pin.
+ */
+class GemminiKU040Config extends Config(
+  new WithKU040Tweaks ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.GemminiRocketConfig)
+
+/** Q0.31 weight-stationary Gemmini, 32x32 mesh, 128 KB accumulator.
+ *
+ *  1024 MacUnit instances -- the largest use_dsp injection target. The 128 KB
+ *  accumulator keeps the banks BRAM-mappable at this mesh width; at 64 KB they
+ *  demote to LUTRAM.
+ *
+ *  Measured synth-only on xcku040-sfva784-1-c:
+ *    pristine  223,841 LUT (92.3%)    326 DSP (17.0%)
+ *    use_dsp   129,190 LUT (53.3%)  1,355 DSP (70.6%)
+ */
+class Q31Ws32x32AccGemminiKU040Config extends Config(
+  new WithKU040Tweaks ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.Q31Ws32x32AccGemminiRocketConfig)
+
+/** V128D128 Saturn vector unit with the int8 Outer Product Unit.
+ *
+ *  512 OuterProductCell instances.
+ *
+ *  Measured synth-only on xcku040-sfva784-1-c:
+ *    pristine  191,455 LUT (79.0%)  155 DSP (8.1%)
+ *    use_dsp   161,133 LUT (66.5%)  672 DSP (35.0%)
+ */
+class SaturnOPUV128D128KU040Config extends Config(
+  new WithKU040Tweaks ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.REFV128D128RocketOPUConfig)
+
 class NoCoresKU040Config extends Config(
   new WithKU040Tweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2
