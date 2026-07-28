@@ -189,6 +189,77 @@ class Q31Ws32x32AccGemminiSaturnV128D128IntOnlyKU040Config extends Config(
   new freechips.rocketchip.rocket.WithNHugeCores(1) ++
   new chipyard.config.AbstractConfig)
 
+/** FP16-only Saturn alongside the Q0.31 32x32 Gemmini, targeting 100 MHz.
+ *
+ *  Third point in the FP-stripping waterfall: full FP (223,787 LUT, 92.3%) was
+ *  infeasible, integer-only (177,064 LUT, 73.0%) fits, and this puts vector FP
+ *  back at FP16 only. `robotMpcParams` sets `noFP64` and `noFP32`, keeping the
+ *  FP16 FMA and dropping the FP32/FP64 datapaths, and switches to TandemFMAPipe
+ *  because FP-stripping is gated there rather than in SegmentedFMAPipe.
+ *
+ *  `useElementwiseFP64 = true` is requested explicitly. Note it is inert in this
+ *  combination: `SIMDFPFMAFactory` filters SEW=3 and SEW=2 instructions out
+ *  before the element-wise mapping runs, so with FP64 and FP32 already stripped
+ *  there is nothing left for it to convert. It is set so the intent survives if
+ *  the FP64 strip is ever relaxed.
+ *
+ *  The Rocket scalar FPU is still retained, so `mlp_control` -- fp32, and the
+ *  only safety-critical workload in the mix -- keeps a correct execution path.
+ *
+ *  The 100 MHz target is a *synthesis constraint*, not a closed frequency. The
+ *  only KU040 config ever placed and routed is the 16%-LUT Rocket, which
+ *  achieved 69.5 MHz. Whether a design at this occupancy closes at 100 MHz is
+ *  unknown until it is routed, and synth-only will report area regardless.
+ */
+class Q31Ws32x32AccGemminiSaturnV128D128Fp16KU040Config extends Config(
+  new WithKU040Tweaks(freqMHz = 100) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(useElementwiseFP64 = true)) ++
+  new gemmini.Q31Ws32x32AccGemminiConfig ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
+/** FP16 Saturn paired with an FP16-only Rocket scalar FPU, at 100 MHz.
+ *
+ *  Completes the pairing upstream's REFV128D128RocketRobotMpcConfig intends:
+ *  robotMpcParams strips FP64/FP32 from the vector unit, WithRocketFPU16 does
+ *  the same to the scalar FPU. The previous build had only the first half, so
+ *  its fpuOpt was still the full 14,060 LUT f16/f32/f64 unit.
+ *
+ *  Measured composition of that scalar FPU: the FP16 FMA is 489 LUT of 14,032.
+ *  The rest is per-precision FMA pipes, three separate div/sqrt units, format
+ *  converters, and a 32x65-bit register file sized to hold doubles.
+ *
+ *  Caveat carried from docs/design-space.md: WithRocketFPU16 is non-spec -- Zfh
+ *  without the F base -- and cannot run standard soft-float. It is only viable
+ *  once MPC is genuinely fp16 and nothing else in the image needs fp32.
+ *
+ *  `noPermute` drops the vrgather / vcompress / vslide shuffle network, 2,101
+ *  LUT measured. It is the only integer-side cut VectorParams exposes; the
+ *  integer divider (1,326 LUT, nothing in the workload divides) and the
+ *  bitmanip pipe (1,219 LUT, no vector bitmanip is issued) are unconditional in
+ *  `integerALUs` / `integerFUs` and would need knobs adding in Saturn.
+ *
+ *  The permute cut is safe for an area probe -- synthesis executes nothing --
+ *  but is not yet validated functionally. maxpool2d_s8, upsample_nearest_s8 and
+ *  the cat ops could plausibly lower to slides or gathers, which would
+ *  trap-illegal at runtime. That has to be checked before anything is run.
+ */
+class Q31Ws32x32AccGemminiSaturnV128D128Fp16FullKU040Config extends Config(
+  new WithKU040Tweaks(freqMHz = 100) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(
+      useElementwiseFP64 = true,
+      noPermute = true)) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new gemmini.Q31Ws32x32AccGemminiConfig ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
 class NoCoresKU040Config extends Config(
   new WithKU040Tweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2
