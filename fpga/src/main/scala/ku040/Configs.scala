@@ -124,7 +124,11 @@ class Q31Ws32x32AccGemminiKU040Config extends Config(
 
 /** V128D128 Saturn vector unit with the int8 Outer Product Unit.
  *
- *  512 OuterProductCell instances.
+ *  256 OuterProductCell instances -- one OuterProductUnit x 16 clusters x 16
+ *  cells. Each cell costs two DSP48E2 under use_dsp, not one: the 8x8 signed
+ *  multiply feeds a 32-bit add whose addend arrives through a 4:1 mux over the
+ *  cell's register file, so the DSP's internal accumulate feedback cannot be
+ *  used. That is why the +517 DSP delta is 256*2+5 and not 512+5.
  *
  *  Measured synth-only on xcku040-sfva784-1-c:
  *    pristine  191,455 LUT (79.0%)  155 DSP (8.1%)
