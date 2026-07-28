@@ -139,6 +139,56 @@ class SaturnOPUV128D128KU040Config extends Config(
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.REFV128D128RocketOPUConfig)
 
+/** V128D128 Saturn vector unit and the Q0.31 32x32 Gemmini on one Rocket.
+ *
+ *  Both accelerators on a single hart: Saturn as the vector unit in the tile,
+ *  Gemmini as a RoCC coprocessor on that tile's port. This is the shape the
+ *  FireSim profiling machine has, so it is the design point where a borrowed
+ *  profile stands the best chance of transferring.
+ *
+ *  Feasibility is the open question. The measured accelerator increments with
+ *  use_dsp are ~90,100 LUT for this Gemmini and ~122,100 LUT for the V128D128
+ *  Saturn *including* its Outer Product Unit, which together overrun the device.
+ *  Dropping the OPU is what might make room: the OPU is 256 cells at two
+ *  DSP48E2 each, and this workload mix reaches int8 matmul through Gemmini
+ *  rather than through Saturn's outer-product path.
+ *
+ *  The FPU is deliberately kept. `mlp_control` is fp32 and is the only
+ *  safety-critical workload in the mix, so the ~14K LUTs a WithoutFPU cut would
+ *  recover are not available here.
+ */
+class Q31Ws32x32AccGemminiSaturnV128D128KU040Config extends Config(
+  new WithKU040Tweaks ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new saturn.rocket.WithRocketVectorUnit(128, 128, saturn.common.VectorParams.refParams) ++
+  new gemmini.Q31Ws32x32AccGemminiConfig ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
+/** As above, with Saturn's floating-point units stripped.
+ *
+ *  Measured from the hierarchy of the full build: Saturn's `ExecutionUnitfp` is
+ *  49,670 LUT, over half the vector unit's 92,447 and the single largest item
+ *  after Gemmini's mesh. `intOnlyParams` sets `noFP = true`, removing the
+ *  FPFMAPipe, FPConv, FPDiv and FPCmp instantiations.
+ *
+ *  The Rocket *scalar* FPU is deliberately retained -- `WithRocketNoFPU` is not
+ *  applied -- so `mlp_control`, the fp32 and only safety-critical workload in
+ *  the mix, still executes. It loses vector acceleration for fp32 and falls
+ *  back to the scalar FPU, which its 0.527 ms against a 20 ms deadline can
+ *  absorb. The int8 networks are unaffected: they reach the vector unit through
+ *  integer paths and Gemmini through RoCC.
+ */
+class Q31Ws32x32AccGemminiSaturnV128D128IntOnlyKU040Config extends Config(
+  new WithKU040Tweaks ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new saturn.rocket.WithRocketVectorUnit(128, 128, saturn.common.VectorParams.intOnlyParams) ++
+  new gemmini.Q31Ws32x32AccGemminiConfig ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
 class NoCoresKU040Config extends Config(
   new WithKU040Tweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2

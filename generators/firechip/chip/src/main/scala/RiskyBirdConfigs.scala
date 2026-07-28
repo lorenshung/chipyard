@@ -79,3 +79,23 @@ class FireSimRiskyBirdSaturnOPUV128D128Config extends Config(
   new WithDefaultFireSimBridges ++
   new WithFireSimConfigTweaks ++
   new chipyard.REFV128D128RocketOPUConfig)
+
+/** V128D128 Saturn vector unit and the Q0.31 32x32 Gemmini on one Rocket.
+ *
+ *  The same base chain as `Q31Ws32x32AccGemminiSaturnV128D128KU040Config` in
+ *  `fpga/src/main/scala/ku040/Configs.scala`, differing only in the two wrapper
+ *  tweaks -- which is what makes the area measurement and the latency
+ *  measurement describe one machine.
+ *
+ *  Closest of these to the machine the shipped gemmini_q31 and V256D128_rvv
+ *  profiles were captured on: same accelerator pair, one hart instead of two,
+ *  and VLEN 128 instead of 256.
+ */
+class FireSimRiskyBirdGemminiQ31SaturnV128D128Config extends Config(
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new saturn.rocket.WithRocketVectorUnit(128, 128, saturn.common.VectorParams.refParams) ++
+  new gemmini.Q31Ws32x32AccGemminiConfig ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
