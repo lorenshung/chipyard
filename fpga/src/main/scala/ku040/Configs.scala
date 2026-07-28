@@ -197,7 +197,7 @@ class Q31Ws32x32AccGemminiSaturnV128D128IntOnlyKU040Config extends Config(
  *  FP16 FMA and dropping the FP32/FP64 datapaths, and switches to TandemFMAPipe
  *  because FP-stripping is gated there rather than in SegmentedFMAPipe.
  *
- *  `useElementwiseFP64 = true` is requested explicitly. Note it is inert in this
+ *  `useElementwiseFP64 = true` is inert in this
  *  combination: `SIMDFPFMAFactory` filters SEW=3 and SEW=2 instructions out
  *  before the element-wise mapping runs, so with FP64 and FP32 already stripped
  *  there is nothing left for it to convert. It is set so the intent survives if
