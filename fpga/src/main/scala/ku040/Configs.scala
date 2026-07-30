@@ -260,6 +260,46 @@ class Q31Ws32x32AccGemminiSaturnV128D128Fp16FullKU040Config extends Config(
   new freechips.rocketchip.rocket.WithNHugeCores(1) ++
   new chipyard.config.AbstractConfig)
 
+/** As the FP16 point above, with Gemmini's fp32 mvin scale removed.
+ *
+ *  Place-and-route of the FP16 build missed 100 MHz by WNS -9.83 ns on a 10 ns
+ *  period -- a ~20 ns critical path. Every one of the 100+ paths physical
+ *  optimization touched was the same module replicated across scale units:
+ *
+ *    gemmini/spad/vsm/pipe{,_1,_3}/out_bits_data_muladder/mulAddRecFNToRaw_postMul
+ *
+ *  That is the `mvin` scale, which the Q0.31 work left as upstream Chipyard
+ *  Gemmini: `mvin_scale_args` is inherited from `GemminiConfigs.defaultConfig`
+ *  and is fp32 (`Float(8, 24)`), an INToRecFN -> MulAddRecFN -> round chain.
+ *  Its `latency = 4` does not help, because `VectorScalarMultiplier` applies
+ *  `Pipe(out, latency)` *after* the scale function, so the registers sit outside
+ *  the combinational block rather than retiming it. The design was half
+ *  converted: fixed-point on the way out, floating-point on the way in.
+ *
+ *  Removing it is free for this workload. Every call site in the modelblaster
+ *  kernels and in the codegen template passes `MVIN_SCALE_IDENTITY` for both A
+ *  and B, and requantization is done in scalar software after a `full_C=true`
+ *  matmul writes the raw int32 accumulator out. No kernel asks for a
+ *  non-identity input scale, so the hardware is dead.
+ *
+ *  Overridden here rather than in the Gemmini submodule so the existing
+ *  measurements of the other Q0.31 configs stay reproducible, and so a
+ *  fork-only pin needs no local edit.
+ */
+class Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleKU040Config extends Config(
+  new WithKU040Tweaks(freqMHz = 100) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(
+      useElementwiseFP64 = true,
+      noPermute = true)) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new gemmini.Q31GemminiConfig(
+    gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(mvin_scale_args = None)) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
 class NoCoresKU040Config extends Config(
   new WithKU040Tweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2
