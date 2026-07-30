@@ -61,6 +61,27 @@ else
 	$(error rb-area requires FPGA_BRAND=xilinx, got '$(FPGA_BRAND)' for SUB_PROJECT=$(SUB_PROJECT))
 endif
 
+# Place and route the checkpoint rb-area already produced, then report timing
+# and power. Deliberately starts from obj/post_synth.dcp rather than re-running
+# the flow: re-elaboration would discard the gen-collateral attribute injection
+# and route a different design from the one whose area was recorded.
+RB_IMPL_CHECKPOINT := $(build_dir)/obj/post_synth.dcp
+
+.PHONY: rb-impl
+rb-impl:
+	@test -f $(RB_IMPL_CHECKPOINT) || { \
+	  echo "rb-impl: no checkpoint at $(RB_IMPL_CHECKPOINT)"; \
+	  echo "rb-impl: run 'rb area run --board $(BOARD) --config $(CONFIG)' first"; \
+	  exit 1; }
+	cd $(build_dir); \
+	RB_CONFIG="$(CONFIG)" \
+	RB_SUB_PROJECT="$(SUB_PROJECT)" \
+	RB_BOARD="$(BOARD)" \
+	vivado \
+		-nojournal -mode batch \
+		-source $(rb_dir)/tcl/rb_impl_timing.tcl \
+		-tclargs -checkpoint $(RB_IMPL_CHECKPOINT)
+
 .PHONY: rb-area
 rb-area: $(RB_AREA_REPORT)
 
