@@ -99,3 +99,108 @@ class FireSimRiskyBirdGemminiQ31SaturnV128D128Config extends Config(
   new chipyard.config.WithSystemBusWidth(128) ++
   new freechips.rocketchip.rocket.WithNHugeCores(1) ++
   new chipyard.config.AbstractConfig)
+
+/** V128D128 Saturn and the Q0.31 32x32 Gemmini with FP16 vector and scalar.
+ *
+ *  Base chain copied verbatim from `Q31Ws32x32AccGemminiSaturnV128D128Fp16FullKU040Config`
+ *  in `fpga/src/main/scala/ku040/Configs.scala`, with that config's two KU040
+ *  wrapper layers -- `WithKU040Tweaks(freqMHz = 100)` and `WithBroadcastManager`
+ *  -- replaced by the two FireSim ones. Everything below those layers is
+ *  identical, including `robotMpcParams` with `useElementwiseFP64` and
+ *  `noPermute`, and `WithRocketFPU16` for the FP16 scalar FPU. That identity is
+ *  the whole point: it is what lets the KU040 area record and a FireSim latency
+ *  measurement be joined as one machine rather than labelled `extrapolated`.
+ *
+ *  Note the Saturn params here are `robotMpcParams`, NOT the `refParams` used by
+ *  `FireSimRiskyBirdGemminiQ31SaturnV128D128Config` above. Each wrapper tracks
+ *  its own KU040 counterpart: that one pairs with
+ *  `Q31Ws32x32AccGemminiSaturnV128D128KU040Config` (`refParams`), this one with
+ *  the Fp16Full config (`robotMpcParams`). The params are part of the base chain
+ *  being matched, so they must not be shared between wrappers.
+ *
+ *  Two divergences from the KU040 config remain and are inherent to the FireSim
+ *  wrapper, not oversights:
+ *
+ *   - `WithFireSimConfigTweaks` runs the buses at 1000 MHz where the KU040 shell
+ *     declares 100. Clock affects wall time only, never cycle counts, and
+ *     `tools/rb/fingerprint.py` deliberately excludes it from `identity_id`, so
+ *     `rb xpurt` reports the same cycles at whichever frequency is asked for.
+ *   - `WithFireSimConfigTweaks` models an L2 and DDR where the KU040 config uses
+ *     `WithBroadcastManager` and a 32 KiB scratchpad. This one DOES change cycle
+ *     counts and will still show up as a memory divergence until the KU040 DDR4
+ *     config is written. It is the last cycle-affecting gap between the two.
+ */
+class FireSimRiskyBirdGemminiQ31SaturnV128D128Fp16FullConfig extends Config(
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(
+      useElementwiseFP64 = true,
+      noPermute = true)) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new gemmini.Q31Ws32x32AccGemminiConfig ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
+/* ---------------------------------------------------------------------------
+ * Fingerprint probes
+ *
+ * `tools/rb/fingerprint.py` extracts a machine's identity from an elaborated
+ * DTS plus its `gen-collateral` dir. The KU040 flow emits both. FireSim's flow
+ * emits NEITHER -- its generated-src holds only FIRRTL, FireSim-generated.sv
+ * and XDC -- so a FireSim profile target could previously only be *declared*
+ * (see dse/profile-targets/firesim_rocket_saturn.json), which leaves fields
+ * null and forces every join to report `extrapolated`.
+ *
+ * These probes close that gap. Each is its `FireSim*Config` counterpart with
+ * `WithDefaultFireSimBridges` removed and nothing else changed. That layer is
+ * the only harness-side part of the pair: `WithFireSimConfigTweaks` is entirely
+ * target-side (bus frequencies, WithNoClockTap, SerialTL width, UART FIFOs,
+ * WithTraceIO, WithExtMemSize(16 GiB), WithBlockDevice), and the bridges
+ * contribute nothing to target identity -- no harts, no ISA, no accelerator, no
+ * memory region. So elaborating a probe under Chipyard's own TestHarness yields
+ * a DTS describing exactly the SoC the FireSim bitstream simulates.
+ *
+ * Probes are never built to a bitstream. They exist only to be elaborated, so
+ * that a descriptor under `dse/profile-targets` can carry
+ * `evidence: "extracted"` and the DSE join can compare extracted against
+ * extracted.
+ *
+ * Each probe also adds `chipyard.harness.WithBlockDeviceModel`, which the
+ * FireSim wrapper does not need. `WithFireSimConfigTweaks` pulls in
+ * `testchipip.iceblk.WithBlockDevice`, and on FireSim the resulting IO is
+ * consumed by a bridge; under Chipyard's TestHarness nothing drives it, so
+ * firtool aborts with `sink "chiptop0.blockdev_bits_*" not fully initialized`
+ * and -- because the firtool rule does `rm -rf` on gen-collateral first --
+ * leaves an EMPTY collateral dir. A DTS is still written, so the failure is
+ * quiet: the fingerprint extracts with correct harts, ISA and memory but
+ * `accelerators: {}`, silently understating any SoC that has one. The binder is
+ * a pure model, harness-side only, and cannot affect target identity (which is
+ * harts, accelerators and memory alone).
+ * ------------------------------------------------------------------------- */
+
+/** Fingerprint probe for `FireSimRiskyBirdRocketConfig` (bitstream
+ *  `rb_u250_rocket`, profile target `firesim_rocket_scalar`).
+ */
+class FireSimRiskyBirdRocketTargetConfig extends Config(
+  new chipyard.harness.WithBlockDeviceModel ++
+  new WithFireSimConfigTweaks ++
+  new chipyard.RocketConfig)
+
+/** Fingerprint probe for `FireSimRiskyBirdGemminiQ31SaturnV128D128Fp16FullConfig`,
+ *  whose KU040 counterpart is
+ *  `Q31Ws32x32AccGemminiSaturnV128D128Fp16FullKU040Config`.
+ */
+class FireSimRiskyBirdGemminiQ31SaturnV128D128Fp16FullTargetConfig extends Config(
+  new chipyard.harness.WithBlockDeviceModel ++
+  new WithFireSimConfigTweaks ++
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(
+      useElementwiseFP64 = true,
+      noPermute = true)) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new gemmini.Q31Ws32x32AccGemminiConfig ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
