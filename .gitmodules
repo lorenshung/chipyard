@@ -65,7 +65,7 @@
 [submodule "sims/firesim"]
 	path = sims/firesim
 	url = git@github.com:lorenshung/firesim.git
-	branch = riskybird-u250
+	branch = main
 [submodule "software/baremetal-ide"]
 	path = software/baremetal-ide
 	url = https://github.com/ucb-bar/Baremetal-IDE.git
