@@ -64,7 +64,8 @@
 	url = https://github.com/ucb-bar/testchipip.git
 [submodule "sims/firesim"]
 	path = sims/firesim
-	url = https://github.com/firesim/firesim.git
+	url = git@github.com:lorenshung/firesim.git
+	branch = riskybird-u250
 [submodule "software/baremetal-ide"]
 	path = software/baremetal-ide
 	url = https://github.com/ucb-bar/Baremetal-IDE.git
