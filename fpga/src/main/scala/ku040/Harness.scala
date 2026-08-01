@@ -30,6 +30,39 @@ class KU040Harness(override implicit val p: Parameters) extends KU040Shell {
 
   harnessSysPLLNode := clockOverlay.overlayOutput.node
 
+  /*** DDR ***/
+
+  // The board carries two independent x16 DDR4 components, one per HP bank, so
+  // there are two controllers of KU040DDRSize each. They are placed at adjacent
+  // base addresses and joined by a crossbar, which presents the pair to the SoC
+  // as one contiguous region -- rather than as two memory channels, whose
+  // block-interleaved address sets each controller could not cover.
+  //
+  // Configurations without a TL backing memory (the scratchpad ones) leave
+  // ExtTLMem undefined and instantiate no MIG at all.
+  val ddrOverlays = dp(ExtTLMem).toSeq.flatMap { extMem =>
+    val perController = p(KU040DDRSize)
+    require(extMem.master.size == perController * 2,
+      s"KU040 has 2 x ${perController} B of DDR4; ExtMem size is ${extMem.master.size} B")
+    dp(DDROverlayKey).zipWithIndex.map { case (placer, i) =>
+      placer.place(DDRDesignInput(extMem.master.base + perController * i, dutWrangler.node, harnessSysPLLNode))
+        .asInstanceOf[DDRKU040PlacedOverlay]
+    }
+  }
+
+  val ddrClient = if (ddrOverlays.isEmpty) None else Some {
+    val extMem = dp(ExtTLMem).get
+    val client = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLMasterParameters.v1(
+      name = "chip_ddr",
+      sourceId = IdRange(0, 1 << extMem.master.idBits)
+    )))))
+    val blockDuringReset = LazyModule(new TLBlockDuringReset(4))
+    val xbar = LazyModule(new TLXbar)
+    ddrOverlays.foreach { _.overlayOutput.ddr := xbar.node }
+    xbar.node := blockDuringReset.node := TLWidthWidget(extMem.master.beatBytes) := client
+    (client, blockDuringReset)
+  }
+
   override lazy val module = new HarnessLikeImpl
 
   class HarnessLikeImpl extends Impl with HasHarnessInstantiators {
@@ -46,6 +79,18 @@ class KU040Harness(override implicit val p: Parameters) extends KU040Shell {
 
     childClock := harnessBinderClock
     childReset := harnessBinderReset
+
+    // Hold the memory port off until every controller has finished calibrating.
+    ddrOverlays.foreach { o =>
+      o.mig.module.clock := harnessBinderClock
+      o.mig.module.reset := harnessBinderReset
+    }
+    ddrClient.foreach { case (_, blockDuringReset) =>
+      val calibrated = ddrOverlays.map(_.mig.module.io.port.c0_init_calib_complete).reduce(_ && _)
+      blockDuringReset.module.clock := harnessBinderClock
+      blockDuringReset.module.reset := harnessBinderReset.asBool || !calibrated
+    }
+
     instantiateChipTops()
   }
 }

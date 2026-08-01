@@ -91,7 +91,11 @@ ifeq ($(SUB_PROJECT),ku040)
 	MODEL             ?= KU040Harness
 	VLOG_MODEL        ?= KU040Harness
 	MODEL_PACKAGE     ?= chipyard.fpga.ku040
-	CONFIG            ?= RocketKU040Config
+	# Default to the board's real 2 GiB of DDR4. The scratchpad-only
+	# configurations (RocketKU040Config and the accelerator area probes) are
+	# still selectable with an explicit CONFIG=; they have to be, because two
+	# DDR4 controllers cost ~22k LUT and the probes already sit above 90%.
+	CONFIG            ?= RocketKU040DDRConfig
 	CONFIG_PACKAGE    ?= chipyard.fpga.ku040
 	GENERATOR_PACKAGE ?= chipyard
 	TB                ?= none # unused

@@ -22,9 +22,31 @@ class WithNoDesignKey extends Config((site, here, up) => {
   case DesignKey => (p: Parameters) => new SimpleLazyRawModule()(p)
 })
 
+/** The board's two 1 GiB DDR4 components, as one 2 GiB TL backing memory.
+ *
+ *  Both controllers are placed by KU040Harness and joined behind a crossbar, so
+ *  the SoC sees a single contiguous region at ExtMem's base.
+ */
+class WithKU040DDRMem extends Config(
+  new WithKU040DDRTL ++
+  new chipyard.config.WithTLBackingMemory ++
+  // 2 x KU040DDRSize; the harness requires the two to agree.
+  new freechips.rocketchip.subsystem.WithExtMemSize(BigInt(0x40000000L) * 2))
+
+/** The pre-DDR arrangement: a 32 KiB mbus scratchpad and no memory port.
+ *
+ *  Retained because it is what every recorded KU040 area number in
+ *  dse/HANDOFF.md was measured against, and because the accelerator probes sit
+ *  at 92%+ LUT with no room for two DDR4 controllers. Configurations built this
+ *  way leave ExtTLMem undefined, so the harness instantiates no MIG at all.
+ */
+class WithKU040ScratchpadMem extends Config(
+  new testchipip.soc.WithMbusScratchpad(base = 0x80000000L, size = (BigInt(1) << 15)) ++
+  new freechips.rocketchip.subsystem.WithNoMemPort)
+
 // The sifive UART (Zephyr console) gets the wired PMOD pins D3/D4; UART-TSI
 // is parked on spare pins A4/B4 until needed.
-class WithKU040Tweaks(freqMHz: Double = 50, uartRxdPin: String = "D3") extends Config(
+class WithKU040Tweaks(freqMHz: Double = 50, uartRxdPin: String = "D3", ddr: Boolean = false) extends Config(
   new WithKU040UART(rxdPin = uartRxdPin) ++
   new WithKU040UARTTSI ++
   new WithKU040JTAG ++
@@ -35,8 +57,7 @@ class WithKU040Tweaks(freqMHz: Double = 50, uartRxdPin: String = "D3") extends C
   new chipyard.config.WithUniformBusFrequencies(freqMHz) ++
   new chipyard.harness.WithAllClocksFromHarnessClockInstantiator ++
   new chipyard.clocking.WithPassthroughClockGenerator ++
-  new testchipip.soc.WithMbusScratchpad(base = 0x80000000L, size = (BigInt(1) << 15)) ++
-  new freechips.rocketchip.subsystem.WithNoMemPort ++
+  (if (ddr) new WithKU040DDRMem else new WithKU040ScratchpadMem) ++
   new freechips.rocketchip.subsystem.WithoutTLMonitors)
 
 /** Opt-in HM01B0 capture, including the I2C controller used to configure the sensor. */
@@ -58,6 +79,24 @@ class RocketKU040OspiConfig extends Config(
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
 
+/** Rocket with the board's full 2 GiB of DDR4 as backing memory.
+ *
+ *  The DDR counterparts of RocketKU040Config / RocketKU040OspiConfig. They are
+ *  separate configurations rather than a change to the existing ones so that
+ *  every recorded KU040 area number stays reproducible, and so the accelerator
+ *  probes -- which already sit at 92%+ LUT -- keep building.
+ */
+class RocketKU040DDRConfig extends Config(
+  new WithKU040Tweaks(ddr = true) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
+class RocketKU040OspiDDRConfig extends Config(
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks(uartRxdPin = "C3", ddr = true) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
 /**
  * Logical full-drone SoC for the custom XCKU040-SFVA784-1-C board.
  *
@@ -69,6 +108,20 @@ class RocketKU040DroneLogicConfig extends Config(
   new chipyard.config.WithRiskyBirdDronePeriphery ++
   new WithKU040OspiPeriphery ++
   new WithKU040Tweaks(uartRxdPin = "C3") ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
+/** The full-drone SoC with the board's 2 GiB of DDR4.
+ *
+ *  This is the deployable drone configuration: the scratchpad variant above is
+ *  kept only so the 32 KiB memory map stays buildable for area comparisons.
+ *  `rb`'s board registry promises 2 GiB for ku040, so this is the variant whose
+ *  generated DTS satisfies the hardware contract.
+ */
+class RocketKU040DroneLogicDDRConfig extends Config(
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks(uartRxdPin = "C3", ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
 

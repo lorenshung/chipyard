@@ -17,6 +17,17 @@ import chipyard.harness._
 import chipyard.iobinders._
 import testchipip.serdes._
 
+// Joins the SoC's TL memory port to the pair of DDR4 controllers in the harness.
+class WithKU040DDRTL extends HarnessBinder({
+  case (th: HasHarnessInstantiators, port: TLMemPort, chipId: Int) => {
+    val kth = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[KU040Harness]
+    val bundles = kth.ddrClient.get._1.out.map(_._1)
+    val ddrClientBundle = Wire(new HeterogeneousBag(bundles.map(_.cloneType)))
+    bundles.zip(ddrClientBundle).foreach { case (bundle, io) => bundle <> io }
+    ddrClientBundle <> port.io
+  }
+})
+
 // All pins below sit in bank 68, an HP bank (1.8V max, LVCMOS33 illegal).
 // The header must be level-shifted on board if it is 3.3V at the connector,
 // as on the Alinx KU040 FMC pins.
