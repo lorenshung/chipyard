@@ -35,10 +35,10 @@ class WithKU040DDRMem extends Config(
 
 /** The pre-DDR arrangement: a 32 KiB mbus scratchpad and no memory port.
  *
- *  Retained because it is what every recorded KU040 area number in
- *  dse/HANDOFF.md was measured against, and because the accelerator probes sit
- *  at 92%+ LUT with no room for two DDR4 controllers. Configurations built this
- *  way leave ExtTLMem undefined, so the harness instantiates no MIG at all.
+ *  Retained only so the 32 KiB memory map stays buildable, and because every
+ *  KU040 area number recorded before the DDR4 work was measured against it.
+ *  Configurations built this way leave ExtTLMem undefined, so the harness
+ *  instantiates no MIG at all.
  */
 class WithKU040ScratchpadMem extends Config(
   new testchipip.soc.WithMbusScratchpad(base = 0x80000000L, size = (BigInt(1) << 15)) ++
@@ -83,8 +83,8 @@ class RocketKU040OspiConfig extends Config(
  *
  *  The DDR counterparts of RocketKU040Config / RocketKU040OspiConfig. They are
  *  separate configurations rather than a change to the existing ones so that
- *  every recorded KU040 area number stays reproducible, and so the accelerator
- *  probes -- which already sit at 92%+ LUT -- keep building.
+ *  every recorded KU040 area number stays reproducible against the memory map it
+ *  was measured on.
  */
 class RocketKU040DDRConfig extends Config(
   new WithKU040Tweaks(ddr = true) ++
@@ -126,37 +126,36 @@ class RocketKU040DroneLogicDDRConfig extends Config(
   new chipyard.RocketConfig)
 
 class SaturnKU040Config extends Config(
-  new WithKU040Tweaks ++
+  new WithKU040Tweaks(ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.REFV256D128RocketConfig)
 
 class SaturnKU040OspiConfig extends Config(
   new WithKU040OspiPeriphery ++
-  new WithKU040Tweaks(uartRxdPin = "C3") ++
+  new WithKU040Tweaks(uartRxdPin = "C3", ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.REFV256D128RocketConfig)
 
 class SaturnKU040DroneLogicConfig extends Config(
   new chipyard.config.WithRiskyBirdDronePeriphery ++
   new WithKU040OspiPeriphery ++
-  new WithKU040Tweaks(uartRxdPin = "C3") ++
+  new WithKU040Tweaks(uartRxdPin = "C3", ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.REFV256D128RocketConfig)
 
-/** Rocket plus the default 16x16 int8 Gemmini.
- *
- *  An area-characterization target, not a deployable configuration: the KU040
- *  shell has a 32 KiB scratchpad and no DRAM, so there is nothing for Gemmini to
- *  DMA against. Synthesis-only measurement does not execute code, so the
- *  resource cost is still meaningful.
+/** Rocket plus the default 16x16 int8 Gemmini, on the board's 2 GiB of DDR4.
  *
  *  The default mesh is 16x16, giving 256 MacUnit instances. That is the
  *  population the `use_dsp` injection in riskybird/tcl/rb_attributes.tcl targets,
  *  so this config is what makes the DSP-inference claim measurable without
  *  moving any submodule pin.
+ *
+ *  Recorded area for this class predates the DDR4 switch and was measured
+ *  against the 32 KiB scratchpad; add the measured 22,027 LUT of the controller
+ *  pair, or re-run `rb area`, before comparing against anything current.
  */
 class GemminiKU040Config extends Config(
-  new WithKU040Tweaks ++
+  new WithKU040Tweaks(ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.GemminiRocketConfig)
 
@@ -166,12 +165,14 @@ class GemminiKU040Config extends Config(
  *  accumulator keeps the banks BRAM-mappable at this mesh width; at 64 KB they
  *  demote to LUTRAM.
  *
- *  Measured synth-only on xcku040-sfva784-1-c:
+ *  Measured synth-only on xcku040-sfva784-1-c, before the DDR4 switch:
  *    pristine  223,841 LUT (92.3%)    326 DSP (17.0%)
  *    use_dsp   129,190 LUT (53.3%)  1,355 DSP (70.6%)
+ *  With the controller pair's measured 22,027 LUT the pristine build no longer
+ *  fits the device; the use_dsp build lands at ~151,200 LUT (62.4%).
  */
 class Q31Ws32x32AccGemminiKU040Config extends Config(
-  new WithKU040Tweaks ++
+  new WithKU040Tweaks(ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.Q31Ws32x32AccGemminiRocketConfig)
 
@@ -183,12 +184,13 @@ class Q31Ws32x32AccGemminiKU040Config extends Config(
  *  cell's register file, so the DSP's internal accumulate feedback cannot be
  *  used. That is why the +517 DSP delta is 256*2+5 and not 512+5.
  *
- *  Measured synth-only on xcku040-sfva784-1-c:
+ *  Measured synth-only on xcku040-sfva784-1-c, before the DDR4 switch:
  *    pristine  191,455 LUT (79.0%)  155 DSP (8.1%)
  *    use_dsp   161,133 LUT (66.5%)  672 DSP (35.0%)
+ *  Add the controller pair's measured 22,027 LUT for the current shape.
  */
 class SaturnOPUV128D128KU040Config extends Config(
-  new WithKU040Tweaks ++
+  new WithKU040Tweaks(ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.REFV128D128RocketOPUConfig)
 
@@ -199,9 +201,11 @@ class SaturnOPUV128D128KU040Config extends Config(
  *  FireSim profiling machine has, so it is the design point where a borrowed
  *  profile stands the best chance of transferring.
  *
- *  Feasibility is the open question. The measured accelerator increments with
- *  use_dsp are ~90,100 LUT for this Gemmini and ~122,100 LUT for the V128D128
- *  Saturn *including* its Outer Product Unit, which together overrun the device.
+ *  Feasibility is the open question, and the DDR4 controller pair's measured
+ *  22,027 LUT comes out of the same budget. The measured accelerator increments
+ *  with use_dsp are ~90,100 LUT for this Gemmini and ~122,100 LUT for the
+ *  V128D128 Saturn *including* its Outer Product Unit, which together overrun
+ *  the device before DDR is counted at all.
  *  Dropping the OPU is what might make room: the OPU is 256 cells at two
  *  DSP48E2 each, and this workload mix reaches int8 matmul through Gemmini
  *  rather than through Saturn's outer-product path.
@@ -211,7 +215,7 @@ class SaturnOPUV128D128KU040Config extends Config(
  *  recover are not available here.
  */
 class Q31Ws32x32AccGemminiSaturnV128D128KU040Config extends Config(
-  new WithKU040Tweaks ++
+  new WithKU040Tweaks(ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new saturn.rocket.WithRocketVectorUnit(128, 128, saturn.common.VectorParams.refParams) ++
   new gemmini.Q31Ws32x32AccGemminiConfig ++
@@ -234,7 +238,7 @@ class Q31Ws32x32AccGemminiSaturnV128D128KU040Config extends Config(
  *  integer paths and Gemmini through RoCC.
  */
 class Q31Ws32x32AccGemminiSaturnV128D128IntOnlyKU040Config extends Config(
-  new WithKU040Tweaks ++
+  new WithKU040Tweaks(ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new saturn.rocket.WithRocketVectorUnit(128, 128, saturn.common.VectorParams.intOnlyParams) ++
   new gemmini.Q31Ws32x32AccGemminiConfig ++
@@ -265,7 +269,7 @@ class Q31Ws32x32AccGemminiSaturnV128D128IntOnlyKU040Config extends Config(
  *  unknown until it is routed, and synth-only will report area regardless.
  */
 class Q31Ws32x32AccGemminiSaturnV128D128Fp16KU040Config extends Config(
-  new WithKU040Tweaks(freqMHz = 100) ++
+  new WithKU040Tweaks(freqMHz = 100, ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new saturn.rocket.WithRocketVectorUnit(128, 128,
     saturn.common.VectorParams.robotMpcParams.copy(useElementwiseFP64 = true)) ++
@@ -301,7 +305,7 @@ class Q31Ws32x32AccGemminiSaturnV128D128Fp16KU040Config extends Config(
  *  trap-illegal at runtime. That has to be checked before anything is run.
  */
 class Q31Ws32x32AccGemminiSaturnV128D128Fp16FullKU040Config extends Config(
-  new WithKU040Tweaks(freqMHz = 100) ++
+  new WithKU040Tweaks(freqMHz = 100, ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new saturn.rocket.WithRocketVectorUnit(128, 128,
     saturn.common.VectorParams.robotMpcParams.copy(
@@ -340,7 +344,7 @@ class Q31Ws32x32AccGemminiSaturnV128D128Fp16FullKU040Config extends Config(
  *  fork-only pin needs no local edit.
  */
 class Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleKU040Config extends Config(
-  new WithKU040Tweaks(freqMHz = 100) ++
+  new WithKU040Tweaks(freqMHz = 100, ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new saturn.rocket.WithRocketVectorUnit(128, 128,
     saturn.common.VectorParams.robotMpcParams.copy(
