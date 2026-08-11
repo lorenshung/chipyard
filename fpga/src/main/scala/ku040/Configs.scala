@@ -588,6 +588,164 @@ class Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleNoLoopConvOspiSingleDDRKU
   new freechips.rocketchip.rocket.WithNHugeCores(1) ++
   new chipyard.config.AbstractConfig)
 
+/* ------------------------------------------------------------------------- *
+ *  CNN navigation SoC.
+ *
+ *  Design points for the deployable navigation model -- a 1.55 M-param /
+ *  6.45 M-MAC all-int8 CNN+LSTM -- rather than the DroNet + MPC + YOLOv8n mix
+ *  the configs above were shaped for. Rationale, measurements and the area
+ *  arithmetic are in docs/ku040-codesign-cnn.md; the short version:
+ *
+ *   - DroNet sustains 1.44 MACs/cycle on the 1024-PE mesh (0.14% utilization),
+ *     and the 1024 `Tile` instances are only 9,641 LUT post-route. Mesh width is
+ *     not a performance axis, so it is chosen for area and timing alone.
+ *   - `vxufp`, Saturn's FP datapath, is 27,387 LUT -- 14.7% of the routed
+ *     baseline -- and an all-int8 CNN uses none of it.
+ *   - `has_loop_conv` is worth 3.08x on conv2d and 3.43x on maxpool against the
+ *     scalar fallback, so the NoLoopConv timing workaround is reverted and the
+ *     critical path attacked directly instead.
+ *
+ *  None of these has been synthesized. The LUT figures in the doc are projected
+ *  from measured per-module numbers, which is exactly what `rb area` is for.
+ * ------------------------------------------------------------------------- */
+
+/** Q0.31 32x32 Gemmini + integer-only Saturn, camera periphery, one DDR4.
+ *
+ *  The reference CNN point, and the control against which the narrower mesh
+ *  below is a single-variable probe.
+ *
+ *  Changes from
+ *  Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleNoLoopConvOspiSingleDDRKU040Config:
+ *
+ *    - `intOnlyParams` instead of `robotMpcParams`, dropping `vxufp` entirely
+ *      (measured -25,560 LUT, -108 DSP from the 202,835 -> 177,064 pair).
+ *    - `WithRocketFPU16` dropped, so the standard f16/f32/f64 scalar FPU returns
+ *      (measured +13,543 LUT). This is deliberate and not a regression:
+ *      `mlp_control` is fp32 and is the only safety-critical workload in the
+ *      mix, it loses vector acceleration when Saturn goes integer-only, and
+ *      `WithRocketFPU16` is non-spec (Zfh without the F base) so it cannot carry
+ *      it. Measured cost is 107,075 cycles = 1.68 ms at 63.8 MHz against a 20 ms
+ *      deadline.
+ *    - `has_loop_conv = true`, reverting the timing workaround. Its area delta is
+ *      unsettled -- the one available A/B is confounded by an fpga-shells bump,
+ *      see the doc -- so the budget assumes the pessimistic +5,435 LUT.
+ *    - `has_training_convs = false`. Inference only.
+ *    - `reservation_station_entries_ex` 16 -> 8 and `ex_queue_length` 8 -> 4.
+ *      This is the cheap attempt at the 100 MHz wall: the routed worst path is
+ *      gemmini/ex_controller/cmd_q/raddr_reg -> raddr_reg, 15.473 ns over 26
+ *      logic levels, and the reservation station's dependency-check cone is what
+ *      feeds that dequeue decision. Config-only, no RTL change. If it does not
+ *      move WNS, the fix is to pipeline the decode.
+ *
+ *  Deliberately kept: `has_first_layer_optimizations`. It gates the
+ *  `mvin_scale_pixel_repeater` (3,320 LUT) which sets
+ *  `max_pixels_per_row = min(DIM/IC, kcols)`. The nav model's input is 60x90
+ *  *greyscale*, so IC = 1 and this packs 3 pixels per mesh row on the first
+ *  layer. It is not dead mvin-scale residue.
+ *
+ *  `noPermute` is carried over from the Fp16Full point and is still only
+ *  validated for area, not function: it removes the vrgather / vcompress /
+ *  vslide network, and if any kernel lowers to a slide or gather it will
+ *  trap-illegal at runtime. The CNN nav model is the best case for it -- maxpool
+ *  returns to Gemmini's depthwise path now that `has_loop_conv` is back, and the
+ *  model has no upsample and no concat -- but that has to be checked against the
+ *  emitted kernels before anything flies. Drop the `.copy(noPermute = true)` to
+ *  buy the 2,101 LUT back if it bites.
+ */
+class CnnNavKU040Config extends Config(
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks(freqMHz = 100, uartRxdPin = "C3", ddr = true, ddrControllers = 1) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.intOnlyParams.copy(noPermute = true)) ++
+  new gemmini.Q31GemminiConfig(
+    gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(
+      mvin_scale_args                = None,
+      has_loop_conv                  = true,
+      has_training_convs             = false,
+      reservation_station_entries_ex  = 8,
+      ex_queue_length                = 4)) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
+/** As above with a 16x16 mesh: the recommended CNN point.
+ *
+ *  256 PEs instead of 1024. At 0.14% measured mesh utilization this costs no
+ *  throughput, and it takes width out of four blocks that scale with `DIM` and
+ *  sit on or near the failing path: `transposer` (5,123 LUT), `tagq` (2,202),
+ *  `mesh_cntl_signals_q` (1,909), and the `MeshWithDelays` skew network. It is
+ *  the second config-only attempt at 100 MHz.
+ *
+ *  `acc_capacity` returns to 64 KB and `dma_buswidth` to 128. Both track the
+ *  mesh: the 32x32 point needed 128 KB only because at that width 64 KB split
+ *  the accumulator into 256x8 tiles that fall under Vivado's BRAM-efficiency
+ *  threshold and demote to LUTRAM; at 16x16 the 512x8 split returns. Halving the
+ *  DMA bus is what a 16-wide mesh column can drain in one cycle, and it should
+ *  take `beatPacker` (10,964 LUT, the largest single item in `spad`) with it.
+ *
+ *  Projected ~160,500 LUT (66.2%) on the pessimistic `has_loop_conv` assumption,
+ *  ~136,200 (56.2%) on the optimistic one, and ~569 DSP either way. That leaves
+ *  room for the DroneLogic periphery below and margin over the 80% routability
+ *  guideline, which no accelerator config on this board has had before.
+ */
+class CnnNavMesh16KU040Config extends Config(
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks(freqMHz = 100, uartRxdPin = "C3", ddr = true, ddrControllers = 1) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.intOnlyParams.copy(noPermute = true)) ++
+  new gemmini.Q31GemminiConfig(
+    gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(
+      meshRows                       = 16,
+      meshColumns                    = 16,
+      acc_capacity                   = gemmini.CapacityInKilobytes(64),
+      dma_buswidth                   = 128,
+      mvin_scale_args                = None,
+      has_loop_conv                  = true,
+      has_training_convs             = false,
+      reservation_station_entries_ex  = 8,
+      ex_queue_length                = 4)) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
+/** The 16x16 CNN point plus the full drone periphery: the flight candidate.
+ *
+ *  Adds `WithRiskyBirdDronePeriphery` -- the PMW3901 SPI, control GPIO and the
+ *  two motor PWM blocks -- on top of I2C, OSPI and 1 GiB of DDR4. This is the
+ *  first configuration that carries an accelerator *and* everything the airframe
+ *  needs, which is the whole point of the area headroom the mesh cut buys.
+ *
+ *  Two caveats carried from RocketKU040DroneLogicConfig, neither introduced
+ *  here. The SPI/GPIO/PWM package pins are still unbound pending the custom
+ *  base-connector mapping and voltage domains, so this builds and measures but
+ *  does not deploy. And no DroneLogic config has ever been through `rb area`, so
+ *  unlike every other number in this family the periphery's cost is unknown
+ *  rather than estimated -- measuring it is a reason to build this point early.
+ */
+class CnnNavDroneLogicKU040Config extends Config(
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks(freqMHz = 100, uartRxdPin = "C3", ddr = true, ddrControllers = 1) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.intOnlyParams.copy(noPermute = true)) ++
+  new gemmini.Q31GemminiConfig(
+    gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(
+      meshRows                       = 16,
+      meshColumns                    = 16,
+      acc_capacity                   = gemmini.CapacityInKilobytes(64),
+      dma_buswidth                   = 128,
+      mvin_scale_args                = None,
+      has_loop_conv                  = true,
+      has_training_convs             = false,
+      reservation_station_entries_ex  = 8,
+      ex_queue_length                = 4)) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
 class NoCoresKU040Config extends Config(
   new WithKU040Tweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2
