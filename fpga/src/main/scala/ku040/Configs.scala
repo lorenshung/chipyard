@@ -22,16 +22,26 @@ class WithNoDesignKey extends Config((site, here, up) => {
   case DesignKey => (p: Parameters) => new SimpleLazyRawModule()(p)
 })
 
-/** The board's two 1 GiB DDR4 components, as one 2 GiB TL backing memory.
+/** The board's 1 GiB DDR4 components as one contiguous TL backing memory.
  *
- *  Both controllers are placed by KU040Harness and joined behind a crossbar, so
- *  the SoC sees a single contiguous region at ExtMem's base.
+ *  `controllers` selects how many of the two are used. Each placed controller is
+ *  KU040DDRSize; the harness derives their number from ExtMem's size and joins
+ *  them behind a crossbar, so the SoC sees one contiguous region at ExtMem's
+ *  base either way. One controller is 1 GiB and saves the second MIG's ~11,000
+ *  LUT and its bank-46 I/O column; the flight mix touched 1.20 MB under FireSim,
+ *  so capacity is not what decides this.
+ *
+ *  The size must be set here rather than overridden from a config layered on top:
+ *  WithTLBackingMemory computes ExtTLMem from `up(ExtMem)`, so a higher-priority
+ *  WithExtMemSize is never seen by the fragment that consumes it.
  */
-class WithKU040DDRMem extends Config(
+class WithKU040DDRMem(controllers: Int = 2) extends Config(
   new WithKU040DDRTL ++
   new chipyard.config.WithTLBackingMemory ++
-  // 2 x KU040DDRSize; the harness requires the two to agree.
-  new freechips.rocketchip.subsystem.WithExtMemSize(BigInt(0x40000000L) * 2))
+  new freechips.rocketchip.subsystem.WithExtMemSize(BigInt(0x40000000L) * controllers)) {
+  require(controllers == 1 || controllers == 2,
+    s"the KU040 carries two DDR4 components; asked for ${controllers} controllers")
+}
 
 /** The pre-DDR arrangement: a 32 KiB mbus scratchpad and no memory port.
  *
@@ -46,7 +56,12 @@ class WithKU040ScratchpadMem extends Config(
 
 // The sifive UART (Zephyr console) gets the wired PMOD pins D3/D4; UART-TSI
 // is parked on spare pins A4/B4 until needed.
-class WithKU040Tweaks(freqMHz: Double = 50, uartRxdPin: String = "D3", ddr: Boolean = false) extends Config(
+//
+// `ddr` chooses whether there is a backing memory port at all -- false is the
+// 32 KiB mbus scratchpad, which has none -- and `ddrControllers` how many of the
+// board's two DDR4 components are placed behind it when there is.
+class WithKU040Tweaks(freqMHz: Double = 50, uartRxdPin: String = "D3", ddr: Boolean = false,
+                      ddrControllers: Int = 2) extends Config(
   new WithKU040UART(rxdPin = uartRxdPin) ++
   new WithKU040UARTTSI ++
   new WithKU040JTAG ++
@@ -57,7 +72,7 @@ class WithKU040Tweaks(freqMHz: Double = 50, uartRxdPin: String = "D3", ddr: Bool
   new chipyard.config.WithUniformBusFrequencies(freqMHz) ++
   new chipyard.harness.WithAllClocksFromHarnessClockInstantiator ++
   new chipyard.clocking.WithPassthroughClockGenerator ++
-  (if (ddr) new WithKU040DDRMem else new WithKU040ScratchpadMem) ++
+  (if (ddr) new WithKU040DDRMem(ddrControllers) else new WithKU040ScratchpadMem) ++
   new freechips.rocketchip.subsystem.WithoutTLMonitors)
 
 /** Opt-in HM01B0 capture, including the I2C controller used to configure the sensor. */
@@ -94,6 +109,74 @@ class RocketKU040DDRConfig extends Config(
 class RocketKU040OspiDDRConfig extends Config(
   new WithKU040OspiPeriphery ++
   new WithKU040Tweaks(uartRxdPin = "C3", ddr = true) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
+/** RocketKU040OspiDDRConfig asked for 100 MHz instead of 50. A timing probe.
+ *
+ *  Nothing else differs, so the pair isolates one question: is the scalar SoC
+ *  intrinsically limited to ~68 MHz on this part, or was that an artifact of
+ *  never having asked it for more?
+ *
+ *  The question is live because the accelerator build -- which *is* constrained
+ *  at 100 MHz -- reports RocketTile's own logic at -5.0 ns:
+ *
+ *    core     -5.029 ns (27 logic levels)   frontend  -5.026 ns (28)
+ *    fpuOpt   -5.097 ns (28)                dcache    -4.627 ns (19)
+ *
+ *  i.e. ~66 MHz for Rocket alone, before any accelerator path is considered.
+ *  If that number is intrinsic, no accelerator cut reaches 100 MHz and the
+ *  target has to move. If instead it is congestion from sharing a 74%-full die
+ *  with Gemmini and Saturn, then area reduction and floorplanning are the
+ *  levers and 100 MHz stays reachable.
+ *
+ *  At 50 MHz this same config closes with +5.177 ns, but 86% of its worst path
+ *  is route delay -- the signature of a placer that stopped once it met a loose
+ *  constraint. That is why the 50 MHz result cannot answer the question and
+ *  this config exists.
+ */
+class RocketKU040OspiDDR100Config extends Config(
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks(freqMHz = 100, uartRxdPin = "C3", ddr = true) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
+/** The rest of the frequency sweep: 125, 150, 175 MHz.
+ *
+ *  100 MHz met with +0.501 ns, which bounds the scalar SoC from below and not
+ *  from above: Vivado stops optimizing once a constraint is met, so a positive
+ *  WNS says "at least this fast" and nothing more. That is exactly the trap the
+ *  50 MHz build set -- it reported +5.177 ns, which read as a 67.5 MHz ceiling
+ *  for a design that in fact clears 100.
+ *
+ *  Ceilings therefore have to be bracketed by asking for more until it fails.
+ *  Each point is one synthesis plus one place-and-route; the first constraint
+ *  that misses puts the true F_max between it and the last one that met.
+ *
+ *  The MMCM can supply all three from the 200 MHz board clock: VCO 1000/8,
+ *  1200/8, 1050/6. The MIG's user interface is unaffected -- it runs at 225 MHz
+ *  in its own domain behind AsynchronousCrossing(8), so the SoC clock is free.
+ *
+ *  What the answer is for: the accelerator build reports RocketTile's own logic
+ *  at -5.0 ns, and whether that is intrinsic or congestion decides whether area
+ *  reduction is a fitting exercise or a timing one. The wider the scalar
+ *  headroom, the more of that -5.0 ns is attributable to sharing the die.
+ */
+class RocketKU040OspiDDR125Config extends Config(
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks(freqMHz = 125, uartRxdPin = "C3", ddr = true) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
+class RocketKU040OspiDDR150Config extends Config(
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks(freqMHz = 150, uartRxdPin = "C3", ddr = true) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
+class RocketKU040OspiDDR175Config extends Config(
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks(freqMHz = 175, uartRxdPin = "C3", ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
 
@@ -353,6 +436,154 @@ class Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleKU040Config extends Confi
   new freechips.rocketchip.rocket.WithRocketFPU16 ++
   new gemmini.Q31GemminiConfig(
     gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(mvin_scale_args = None)) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
+/** The FP16 point again, with Gemmini's convolution loop unroller removed.
+ *
+ *  `has_loop_conv = false` deletes the LoopConv FSM; Controller.scala:251 then
+ *  binds `conv_cmd` straight to `raw_cmd`, so commands pass through to
+ *  LoopMatmul untouched. LoopMatmul, and therefore `tiled_matmul_auto`, is
+ *  unaffected.
+ *
+ *  What it is expected to remove, measured from the NoMvinScale hierarchy:
+ *    gemmini/mod (LoopConv)   5,435 LUT   132 DSP
+ *  and with it the entire worse-than -6 ns population of the design. LoopConv
+ *  owns the worst path -- `derived_params()` at LoopConv.scala:1107 elaborates
+ *  four dependent DSP48E2 multiplies with no register between the loop-state
+ *  registers and the consumer's capture flop, 10.18 ns of the 18.11 ns path --
+ *  and it is instantiated five times, once per sub-unit, at lines 1388/1410/
+ *  1430/1449/1477.
+ *
+ *  It is only ~1,300 ns of the 220,860 ns TNS, so this fixes WNS and not
+ *  throughput: the predicted next wall is gemmini/ex_controller at -6.727 ns.
+ *
+ *  DDR is deliberately OFF, matching WithKU040Tweaks' default and therefore the
+ *  memory arrangement every recorded accelerator number was measured against
+ *  (181,513 LUT synth / 180,448 routed / WNS -8.289 ns). This is a probe whose
+ *  only difference from that baseline is has_loop_conv, so the delta is
+ *  attributable. It is not a deployable configuration.
+ *
+ *  Software cost, which is the real open question and is not settled by area:
+ *  conv2d_s8 must move from `tiled_conv_auto` to the existing bit-exact
+ *  `gemmini_q31_conv2d_s8_gemmini_im2col_full_C.c`, and maxpool2d_s8 from
+ *  `tiled_conv_dw_auto` to `rvv/rvv_maxpool2d_s8_direct.c`. Those two are the
+ *  only callers of LOOP_CONV_WS in the q31 kernel set, and conv2d is 30.2 ms of
+ *  the 61.5 ms of serial op time in the flight3 profile.
+ */
+class Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleNoLoopConvKU040Config extends Config(
+  new WithKU040Tweaks(freqMHz = 100) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(
+      useElementwiseFP64 = true,
+      noPermute = true)) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new gemmini.Q31GemminiConfig(
+    gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(
+      mvin_scale_args = None,
+      has_loop_conv = false)) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
+/** The no-LoopConv point with the board's 2 GiB of DDR4 actually present.
+ *
+ *  The probe above runs on the 32 KiB scratchpad so its delta against the
+ *  recorded baseline was attributable to has_loop_conv alone. That made the
+ *  measurement clean and the result unquotable: it reported 174,795 LUT (72.1%)
+ *  and WNS -4.169 ns for a configuration with no memory controller.
+ *
+ *  This adds the controller pair, whose cost is measured rather than estimated:
+ *  10,972 + 10,971 LUT for the two MIGs plus 99 for the joining crossbar =
+ *  22,042 LUT, 26,474 FF, 50 RAMB36. That projects to 196,837 LUT, 81.2% --
+ *  over the 80% routability guideline, under the device. Whether it routes and
+ *  what it costs in slack is the question; if it is too tight, dropping to one
+ *  controller recovers 11,070 LUT for 1 GiB, which is ample (the FireSim run
+ *  used 1.20 MB).
+ *
+ *  Two things to watch beyond LUTs. The MIG user interfaces run at 225 MHz in
+ *  their own domain behind AsynchronousCrossing(8), and in the scalar build
+ *  they closed by only +0.014 and +0.015 ns -- noise-level margin that extra
+ *  congestion could erase. And DDR adds ~26,000 FF plus 50 RAMB36 of placement
+ *  pressure to a design whose worst path is already 75% wire.
+ *
+ *  OSPI is deliberately still absent, so this is one variable against the probe.
+ *  Adding it is a separately measured 1,149 LUT and 33 RAMB36 on a 36 MHz domain
+ *  with +24 ns of slack.
+ */
+class Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleNoLoopConvDDRKU040Config extends Config(
+  new WithKU040Tweaks(freqMHz = 100, ddr = true) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(
+      useElementwiseFP64 = true,
+      noPermute = true)) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new gemmini.Q31GemminiConfig(
+    gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(
+      mvin_scale_args = None,
+      has_loop_conv = false)) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
+/** The deployable shape of the no-LoopConv point: camera periphery, one DDR4.
+ *
+ *  The two configurations above were probes, each isolating one variable. This
+ *  is the one meant to fly, so it carries what the platform actually needs and
+ *  nothing it does not:
+ *
+ *    + I2C and OSPI, without which the HM01B0 cannot be configured or read
+ *    - the bank-46 DDR4 controller, leaving 1 GiB
+ *
+ *  Dropping the second controller is a memory-capacity decision that costs
+ *  nothing real: the FireSim run of the flight mix touched 1.20 MB, so 1 GiB is
+ *  three orders of magnitude of headroom. What it buys is the difference between
+ *  a design that routes with margin and one that does not.
+ *
+ *  Measured on xcku040-sfva784-1-c with use_dsp, against the routed
+ *  two-controller build (196,828 LUT, 81.20%, WNS -5.014 ns):
+ *
+ *    synth   188,842 LUT (77.9%)      routed  186,878 LUT (77.09%)
+ *            128,701 FF, 74 RAMB36,           128,548 FF, 74 RAMB36,
+ *            417 RAMB18, 1,314 DSP            417 RAMB18, 1,314 DSP
+ *
+ *  The area half went as expected and decomposes exactly: -12,497 LUT for mig_1,
+ *  -99 for the joining crossbar, which degenerates to 1-in/1-out and is optimized
+ *  away entirely, +1,121 for I2C and OSPI. It routes clean -- 0 failed nets, 34%
+ *  global routing utilization, DRC identical to the two-controller build -- and
+ *  it is the first accelerator configuration on this board under the 80%
+ *  routability guideline. Power falls 3.351 W to 2.781 W.
+ *
+ *  The frequency half did not. WNS goes the wrong way, -5.014 to -5.670 ns
+ *  (66.6 -> 63.8 MHz), and TNS with it, -140,906 to -175,312 ns. Freeing 10,000
+ *  LUT and a whole clock domain bought no slack, which settles what the
+ *  two-controller result left open: the accelerator's critical path is not
+ *  congestion the DDR4 pair was causing. Every one of the ten worst paths is
+ *  inside gemmini/ex_controller/cmd_q, on raddr_reg -- the ReservationStation
+ *  read-address decode -- which is the wall the no-LoopConv work predicted, and
+ *  it does not care how much of the device is empty around it. Fixing it means
+ *  pipelining that decode, not making room.
+ *
+ *  Two things did behave as argued. The surviving MIG's user interface recovers
+ *  from -0.252 to -0.106 ns, still failing but by less, so the pair was indeed
+ *  squeezing itself. And OSPI is free: 36 MHz off the sensor's PCLK, +23.784 ns.
+ */
+class Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleNoLoopConvOspiSingleDDRKU040Config extends Config(
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks(freqMHz = 100, uartRxdPin = "C3", ddr = true, ddrControllers = 1) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(
+      useElementwiseFP64 = true,
+      noPermute = true)) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new gemmini.Q31GemminiConfig(
+    gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(
+      mvin_scale_args = None,
+      has_loop_conv = false)) ++
   new chipyard.config.WithSystemBusWidth(128) ++
   new freechips.rocketchip.rocket.WithNHugeCores(1) ++
   new chipyard.config.AbstractConfig)

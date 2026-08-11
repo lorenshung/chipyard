@@ -33,18 +33,26 @@ class KU040Harness(override implicit val p: Parameters) extends KU040Shell {
   /*** DDR ***/
 
   // The board carries two independent x16 DDR4 components, one per HP bank, so
-  // there are two controllers of KU040DDRSize each. They are placed at adjacent
-  // base addresses and joined by a crossbar, which presents the pair to the SoC
-  // as one contiguous region -- rather than as two memory channels, whose
+  // a controller of KU040DDRSize can be placed against each. They are placed at
+  // adjacent base addresses and joined by a crossbar, which presents them to the
+  // SoC as one contiguous region -- rather than as two memory channels, whose
   // block-interleaved address sets each controller could not cover.
+  //
+  // How many are placed follows from ExtMem's size: one MIG per KU040DDRSize, in
+  // DDROverlayKey's declaration order, so an ExtMem of one controller's size
+  // leaves the bank-46 component (and its ~11,000 LUT) out of the design.
   //
   // Configurations without a TL backing memory (the scratchpad ones) leave
   // ExtTLMem undefined and instantiate no MIG at all.
   val ddrOverlays = dp(ExtTLMem).toSeq.flatMap { extMem =>
     val perController = p(KU040DDRSize)
-    require(extMem.master.size == perController * 2,
-      s"KU040 has 2 x ${perController} B of DDR4; ExtMem size is ${extMem.master.size} B")
-    dp(DDROverlayKey).zipWithIndex.map { case (placer, i) =>
+    val placers = dp(DDROverlayKey)
+    require(extMem.master.size % perController == 0 &&
+            extMem.master.size / perController >= 1 &&
+            extMem.master.size / perController <= placers.size,
+      s"KU040 has ${placers.size} x ${perController} B of DDR4; ExtMem size " +
+      s"${extMem.master.size} B is not a whole number of controllers within that")
+    placers.take((extMem.master.size / perController).toInt).zipWithIndex.map { case (placer, i) =>
       placer.place(DDRDesignInput(extMem.master.base + perController * i, dutWrangler.node, harnessSysPLLNode))
         .asInstanceOf[DDRKU040PlacedOverlay]
     }
