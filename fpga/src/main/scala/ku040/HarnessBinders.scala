@@ -72,8 +72,16 @@ class WithKU040UART(rxdPin: String = "D3", txdPin: String = "D4") extends Harnes
 
 // Pin assignments (PMOD1):
 //   TCK - E5, TMS - C6, TDI - D5, TDO - D6
+// `pullup` defaults to false because these four pins are LVCMOS18 in HP bank 68,
+// so any real adapter reaches them through a level translator. A TXB0108 holds
+// its output with ~4 kOhm one-shot drivers and TI requires external pulls to be
+// >50 kOhm; an UltraScale internal PULLUP is ~10-25 kOhm and contends with it.
+// Measured on hardware: with PULLUP the JTAG IR capture is non-deterministic
+// (0x17, 0x0003, 0x1b across identical runs), without it the same bitstream is
+// bit-exact repeatable. Set it true only for a directly-wired 1.8 V probe.
 class WithKU040JTAG(tckPin: String = "E5", tmsPin: String = "C6",
-                    tdiPin: String = "D5", tdoPin: String = "D6") extends HarnessBinder({
+                    tdiPin: String = "D5", tdoPin: String = "D6",
+                    pullup: Boolean = false) extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: JTAGPort, chipId: Int) => {
     val kth = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[KU040Harness]
     val harnessIO = IO(new JTAGChipIO(false)).suggestName("jtag")
@@ -98,7 +106,7 @@ class WithKU040JTAG(tckPin: String = "E5", tmsPin: String = "C6",
     packagePinsWithPackageIOs foreach { case (pin, io) => {
       kth.xdc.addPackagePin(io, pin)
       kth.xdc.addIOStandard(io, "LVCMOS18")
-      kth.xdc.addPullup(io)
+      if (pullup) kth.xdc.addPullup(io)
     } }
   }
 })

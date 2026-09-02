@@ -50,8 +50,8 @@ class WithKU040DDRMem(controllers: Int = 2) extends Config(
  *  Configurations built this way leave ExtTLMem undefined, so the harness
  *  instantiates no MIG at all.
  */
-class WithKU040ScratchpadMem extends Config(
-  new testchipip.soc.WithMbusScratchpad(base = 0x80000000L, size = (BigInt(1) << 15)) ++
+class WithKU040ScratchpadMem(size: BigInt = BigInt(1) << 15) extends Config(
+  new testchipip.soc.WithMbusScratchpad(base = 0x80000000L, size = size) ++
   new freechips.rocketchip.subsystem.WithNoMemPort)
 
 // The sifive UART (Zephyr console) gets the wired PMOD pins D3/D4; UART-TSI
@@ -61,7 +61,8 @@ class WithKU040ScratchpadMem extends Config(
 // 32 KiB mbus scratchpad, which has none -- and `ddrControllers` how many of the
 // board's two DDR4 components are placed behind it when there is.
 class WithKU040Tweaks(freqMHz: Double = 50, uartRxdPin: String = "D3", ddr: Boolean = false,
-                      ddrControllers: Int = 2) extends Config(
+                      ddrControllers: Int = 2,
+                      scratchpadBytes: BigInt = BigInt(1) << 15) extends Config(
   new WithKU040UART(rxdPin = uartRxdPin) ++
   new WithKU040UARTTSI ++
   new WithKU040JTAG ++
@@ -72,7 +73,7 @@ class WithKU040Tweaks(freqMHz: Double = 50, uartRxdPin: String = "D3", ddr: Bool
   new chipyard.config.WithUniformBusFrequencies(freqMHz) ++
   new chipyard.harness.WithAllClocksFromHarnessClockInstantiator ++
   new chipyard.clocking.WithPassthroughClockGenerator ++
-  (if (ddr) new WithKU040DDRMem(ddrControllers) else new WithKU040ScratchpadMem) ++
+  (if (ddr) new WithKU040DDRMem(ddrControllers) else new WithKU040ScratchpadMem(scratchpadBytes)) ++
   new freechips.rocketchip.subsystem.WithoutTLMonitors)
 
 /** Opt-in HM01B0 capture, including the I2C controller used to configure the sensor. */
@@ -85,6 +86,23 @@ class WithKU040OspiPeriphery extends Config(
 
 class RocketKU040Config extends Config(
   new WithKU040Tweaks ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
+/** RocketKU040Config with a 128 KiB scratchpad instead of 32 KiB.
+ *
+ *  Bring-up convenience only. A default Zephyr `hello_world` for
+ *  chipyard_riscv64 is 54,128 B, and even trimmed hard (nano cbprintf, minimal
+ *  libc, riscv,ndev cut from 1024 to 32, stacks reduced) it lands at 36,400 B --
+ *  still 3,632 B over the 32 KiB budget. 128 KiB leaves room to bring the
+ *  console up without also fighting the linker.
+ *
+ *  Note for `rb`: boards.py treats any config whose name contains "Spad" as a
+ *  32 KiB scratchpad config and reports SCRATCHPAD_MEMORY_SIZE for it, so `rb`
+ *  will understate this one's memory until that table learns the size.
+ */
+class RocketKU040Spad128Config extends Config(
+  new WithKU040Tweaks(scratchpadBytes = BigInt(128) << 10) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
 
@@ -426,6 +444,47 @@ class Q31Ws32x32AccGemminiSaturnV128D128Fp16FullKU040Config extends Config(
  *  measurements of the other Q0.31 configs stay reproducible, and so a
  *  fork-only pin needs no local edit.
  */
+/** The LoopConv-keeping Q0.31 point, retargeted to a frequency it can close.
+ *
+ *  Same SoC as Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleKU040Config --
+ *  LoopConv retained, because the xpurt flight3 networks need it -- but clocked
+ *  at 50 MHz instead of 100.
+ *
+ *  Why: at 100 MHz that config does not close. Post-route WNS is -8.289 ns, so
+ *  the critical path needs 18.289 ns and the achievable frequency is about
+ *  54.7 MHz. Vivado still emits a bitstream with only a warning, which makes a
+ *  timing-failing build easy to load and benchmark by accident. The NoLoopConv
+ *  variants are better but also fail: -4.169 ns plain, -5.014 ns DDR.
+ *
+ *  One DDR4 controller, not the WithKU040Tweaks default of two: the second MIG
+ *  costs roughly 11k LUTs, and every accelerator config that has actually
+ *  placed on this part uses ddrControllers = 1. 1 GiB is ample for the flight3
+ *  networks.
+ *
+ *  Build it with use_dsp injection, or it will not fit: pristine synthesis of
+ *  this shape is 298,298 slice LUTs against 242,400 available (123%), and
+ *  place_design never runs. Injection is a gen-collateral source edit, so the
+ *  order is elaborate -> inject -> make bitstream.
+ *
+ *  50 MHz leaves 1.7 ns of margin against the measured path and matches the
+ *  frequency hardware/zephyr/fpga-common.overlay and fpga.conf already assume
+ *  (cpu@0 clock-frequency 50 MHz, CLINT timebase 50 kHz), so no Zephyr clock
+ *  overrides are needed and MODELBLASTER_WALL_CYCLES stays trustworthy.
+ */
+class Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScale50KU040Config extends Config(
+  new WithKU040Tweaks(freqMHz = 50, ddr = true, ddrControllers = 1) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(
+      useElementwiseFP64 = true,
+      noPermute = true)) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new gemmini.Q31GemminiConfig(
+    gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(mvin_scale_args = None)) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
 class Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleKU040Config extends Config(
   new WithKU040Tweaks(freqMHz = 100, ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
@@ -584,6 +643,51 @@ class Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleNoLoopConvOspiSingleDDRKU
     gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(
       mvin_scale_args = None,
       has_loop_conv = false)) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
+/** The flight3 SoC: one DDR4 controller, camera periphery, LoopConv KEPT.
+ *
+ *  Identical to
+ *  `Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleNoLoopConvOspiSingleDDRKU040Config`
+ *  above except that `has_loop_conv` returns to its default of `true`. This is
+ *  the deployable point of that pair, and the one to benchmark; the NoLoopConv
+ *  sibling was a timing experiment, not a target.
+ *
+ *  WHY LOOPCONV COMES BACK. It was removed to buy frequency, and it did not:
+ *  post-route WNS went the wrong way, -5.014 -> -5.670 ns (66.6 -> 63.8 MHz),
+ *  because every one of the ten worst paths is inside
+ *  `gemmini/ex_controller/cmd_q` on `raddr_reg` -- the ReservationStation
+ *  read-address decode -- which does not care how much of the device is empty
+ *  around it. So the workaround cost real throughput and bought no slack.
+ *
+ *  What it costs to keep, measured rather than projected: `has_loop_conv` is the
+ *  only thing standing between `conv2d`/`maxpool` and the scalar fallback, and
+ *  on the FireSim run recorded in docs/firesim-flight3-bringup.md **98.9% of
+ *  dronet's runtime is in exactly those two op classes** (`conv2d_s8` alone is
+ *  97.7%, 434,011,005 of 444,343,275 cycles). Giving that up to chase 2.8 MHz is
+ *  a bad trade by roughly two orders of magnitude.
+ *
+ *  Area: its NoLoopConv sibling synthesizes at 188,842 LUT (77.9% of the
+ *  xcku040's 242,400). The LoopConv delta is unsettled -- the one available A/B
+ *  is confounded by an fpga-shells bump, see docs/ku040-codesign-cnn.md -- so the
+ *  budget carries the pessimistic +5,435 LUT, putting this at roughly 194,000
+ *  (80.1%). `rb area run --config Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleOspiSingleDDRKU040Config`
+ *  settles it; that number is a projection until it does.
+ */
+class Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleOspiSingleDDRKU040Config extends Config(
+  new WithKU040OspiPeriphery ++
+  new WithKU040Tweaks(freqMHz = 100, uartRxdPin = "C3", ddr = true, ddrControllers = 1) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(
+      useElementwiseFP64 = true,
+      noPermute = true)) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new gemmini.Q31GemminiConfig(
+    gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(
+      mvin_scale_args = None)) ++   // has_loop_conv defaults to true
   new chipyard.config.WithSystemBusWidth(128) ++
   new freechips.rocketchip.rocket.WithNHugeCores(1) ++
   new chipyard.config.AbstractConfig)
