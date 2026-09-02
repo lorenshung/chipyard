@@ -86,6 +86,23 @@ ifeq ($(SUB_PROJECT),arty100t)
 	BOARD             ?= arty_a7_100
 	FPGA_BRAND        ?= xilinx
 endif
+ifeq ($(SUB_PROJECT),arty200t)
+	# Trenz TE0712 carrying the XC7A200T. Same carrier and same 484-ball
+	# footprint as arty100t; the part string in
+	# fpga-shells/xilinx/arty_a7_200/tcl/board.tcl is the only physical
+	# difference.
+	SBT_PROJECT       ?= chipyard_fpga
+	MODEL             ?= Arty200THarness
+	VLOG_MODEL        ?= Arty200THarness
+	MODEL_PACKAGE     ?= chipyard.fpga.arty200t
+	CONFIG            ?= RocketArty200TConfig
+	CONFIG_PACKAGE    ?= chipyard.fpga.arty200t
+	GENERATOR_PACKAGE ?= chipyard
+	TB                ?= none # unused
+	TOP               ?= ChipTop
+	BOARD             ?= arty_a7_200
+	FPGA_BRAND        ?= xilinx
+endif
 ifeq ($(SUB_PROJECT),ku040)
 	SBT_PROJECT       ?= chipyard_fpga
 	MODEL             ?= KU040Harness
