@@ -22,7 +22,7 @@ import testchipip.serdes._
 class WithArty100TDDRTL extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: TLMemPort, chipId: Int) => {
     val artyTh = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[Arty100THarness]
-    val bundles = artyTh.ddrClient.out.map(_._1)
+    val bundles = artyTh.ddrClient.get._1.out.map(_._1)
     val ddrClientBundle = Wire(new HeterogeneousBag(bundles.map(_.cloneType)))
     bundles.zip(ddrClientBundle).foreach { case (bundle, io) => bundle <> io }
     ddrClientBundle <> port.io
@@ -62,10 +62,18 @@ class WithArty100TUART(rxdPin: String = "A9", txdPin: String = "D10") extends Ha
   }
 })
 
-// Maps the UART device to PMOD JD pins 3/7
-class WithArty100TPMODUART extends WithArty100TUART("V18", "Y18")
+// The Zephyr console UART on the TE0712 carrier: RV_UART_RX / RV_UART_TX.
+// rxd is an FPGA input (carrier drives it), txd an FPGA output.
+class WithArty100TPMODUART extends WithArty100TUART("E21", "D21")
 
-class WithArty100TJTAG extends HarnessBinder({
+// JTAG into the RISC-V debug module. The defaults are the TE0712 drone carrier's
+// four header pins (bank 16); a carrier that brings different balls out passes its
+// own, the same way WithArty100TUART/WithArty100TI2C/WithArty100TOspi take theirs.
+class WithArty100TJTAG(
+  tckPin: String = "A19",
+  tmsPin: String = "F19",
+  tdiPin: String = "A18",
+  tdoPin: String = "F20") extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: JTAGPort, chipId: Int) => {
     val ath = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[Arty100THarness]
     val harnessIO = IO(new JTAGChipIO(false)).suggestName("jtag")
@@ -79,10 +87,10 @@ class WithArty100TJTAG extends HarnessBinder({
     ath.sdc.addGroup(clocks = Seq("JTCK"))
     ath.xdc.clockDedicatedRouteFalse(IOPin(harnessIO.TCK))
     val packagePinsWithPackageIOs = Seq(
-      ("W19", IOPin(harnessIO.TCK)),
-      ("V20", IOPin(harnessIO.TMS)),
-      ("W20", IOPin(harnessIO.TDI)),
-      ("U20", IOPin(harnessIO.TDO))
+      (tckPin, IOPin(harnessIO.TCK)),
+      (tmsPin, IOPin(harnessIO.TMS)),
+      (tdiPin, IOPin(harnessIO.TDI)),
+      (tdoPin, IOPin(harnessIO.TDO))
     )
     
     packagePinsWithPackageIOs foreach { case (pin, io) => {
@@ -98,7 +106,7 @@ class WithArty100TJTAG extends HarnessBinder({
 // Placed in WithArty100TOspiPeriphery so it overrides the default chipyard.harness.WithI2CTiedOff.
 // PINS: board-specific (xc7a100t-fgg484). I2C needs pull-ups: addPullup enables the weak internal
 // pull-up; external ~4.7k is recommended for reliable I2C rise times.
-class WithArty100TI2C(sclPin: String = "A18", sdaPin: String = "A19") extends HarnessBinder({
+class WithArty100TI2C(sclPin: String = "A15", sdaPin: String = "A16") extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: I2CPort, chipId: Int) => {
     val ath = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[Arty100THarness]
     val harnessIO = IO(new ShellI2CPortIO).suggestName("i2c")
@@ -116,16 +124,29 @@ class WithArty100TI2C(sclPin: String = "A18", sdaPin: String = "A19") extends Ha
 })
 
 // Brings the HM01B0 capture peripheral's parallel-video pins out to the xc7a100t-fgg484 shell.
-// These defaults are buildable package-pin assignments, but must be matched to the carrier wiring.
-// The sensor is limited to 3.0 V IOVDD, so a level shifter is required at this 3.3 V interface.
+// Pins are the TE0712 drone-carrier mapping. dataPins is ordered D0..D7, i.e. index 0 is the LSB.
+//
+// VOLTAGE, AND WHY IT IS NOT A SINGLE SWITCH. hardware/ospi/docs/README.md records the HM01B0
+// module IOVDD as 1.8 V. `ioStandard` therefore exists so the camera group can be moved to
+// LVCMOS18 if its bank VCCO is set to 1.8 V -- but the interface is NOT confined to one bank.
+// Measured on xc7a100tfgg484 (Vivado get_package_pins):
+//
+//   bank 15: D0-D7, PCLK, FVLD, LVLD, MCLK        <- 12 signals, movable to 1.8 V together
+//   bank 14: TRIG, INT                            <- shares a bank with UART-TSI (P16/U18)
+//
+// Setting bank 14 to 1.8 V would take the UART-TSI loader pins with it and break the load path,
+// so TRIG and INT cannot follow the rest of the camera group by a bank change alone. For
+// bring-up neither is required: capture runs free-running, so TRIG is unused, and INT is only
+// the motion interrupt. Leave them disconnected unless a translator is present.
 class WithArty100TOspi(
-  dataPins: Seq[String] = Seq("B17", "B18", "A14", "A13", "D16", "E16", "E17", "F16"),
-  pclkPin: String = "B15",
-  fvldPin: String = "A16",
-  lvldPin: String = "B16",
-  intrPin: String = "F19",
-  mclkPin: String = "A15",
-  trigPin: String = "F20") extends HarnessBinder({
+  dataPins: Seq[String] = Seq("H22", "J22", "K18", "K19", "L19", "L20", "J19", "H19"),
+  pclkPin: String = "H20",
+  fvldPin: String = "K22",
+  lvldPin: String = "G20",
+  intrPin: String = "V20",
+  mclkPin: String = "K21",
+  trigPin: String = "U20",
+  ioStandard: String = "LVCMOS33") extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: OspiPort, chipId: Int) => {
     val ath = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[Arty100THarness]
     require(dataPins.size == 8, "HM01B0 8-bit mode requires exactly eight data pins")
@@ -136,12 +157,12 @@ class WithArty100TOspi(
     dataPins.zipWithIndex.foreach { case (pin, i) =>
       val io = IOPin(harnessIO.d, i)
       ath.xdc.addPackagePin(io, pin)
-      ath.xdc.addIOStandard(io, "LVCMOS33")
+      ath.xdc.addIOStandard(io, ioStandard)
     }
 
     val pclkIO = IOPin(harnessIO.pclk)
     ath.xdc.addPackagePin(pclkIO, pclkPin)
-    ath.xdc.addIOStandard(pclkIO, "LVCMOS33")
+    ath.xdc.addIOStandard(pclkIO, ioStandard)
 
     val ctrlPins = Seq(
       (fvldPin, IOPin(harnessIO.fvld)), // FLVD (bundle keeps the historical `fvld` spelling)
@@ -153,13 +174,14 @@ class WithArty100TOspi(
 
     ctrlPins.foreach { case (pin, io) =>
       ath.xdc.addPackagePin(io, pin)
-      ath.xdc.addIOStandard(io, "LVCMOS33")
+      ath.xdc.addIOStandard(io, ioStandard)
     }
 
     ath.sdc.addClock("ospi_pclk", pclkIO, 36)
     ath.sdc.addGroup(clocks = Seq("ospi_pclk"))
-    // B15 is not a clock-capable package pin. The override permits routing at the HM01B0's low
-    // pixel-clock rate; override pclkPin with a carrier-connected MRCC/SRCC pin when available.
+    // H20 has not been confirmed as a clock-capable (MRCC/SRCC) package pin on this carrier. The
+    // override permits routing at the HM01B0's low pixel-clock rate (<= 36 MHz per the datasheet
+    // table in hardware/ospi/docs/README.md); move pclkPin to a clock-capable pin if one is wired.
     ath.xdc.clockDedicatedRouteFalse(pclkIO)
   }
 })

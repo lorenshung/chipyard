@@ -33,13 +33,23 @@ class Arty100THarness(override implicit val p: Parameters) extends Arty100TShell
 
   harnessSysPLLNode := clockOverlay.overlayOutput.node
 
-  val ddrOverlay = dp(DDROverlayKey).head.place(DDRDesignInput(dp(ExtTLMem).get.master.base, dutWrangler.node, harnessSysPLLNode)).asInstanceOf[DDRArtyPlacedOverlay]
-  val ddrClient = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLMasterParameters.v1(
-    name = "chip_ddr",
-    sourceId = IdRange(0, 1 << dp(ExtTLMem).get.master.idBits)
-  )))))
-  val ddrBlockDuringReset = LazyModule(new TLBlockDuringReset(4))
-  ddrOverlay.overlayOutput.ddr := ddrBlockDuringReset.node := ddrClient
+  // Configurations without a TL backing memory -- the 32 KiB mbus scratchpad
+  // ones -- leave ExtTLMem undefined and instantiate no MIG at all. This
+  // mirrors the KU040 harness, where the same choice is already exercised.
+  val ddrOverlay = dp(ExtTLMem).map { extMem =>
+    dp(DDROverlayKey).head
+      .place(DDRDesignInput(extMem.master.base, dutWrangler.node, harnessSysPLLNode))
+      .asInstanceOf[DDRArtyPlacedOverlay]
+  }
+  val ddrClient = dp(ExtTLMem).map { extMem =>
+    val client = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLMasterParameters.v1(
+      name = "chip_ddr",
+      sourceId = IdRange(0, 1 << extMem.master.idBits)
+    )))))
+    val blockDuringReset = LazyModule(new TLBlockDuringReset(4))
+    ddrOverlay.get.overlayOutput.ddr := blockDuringReset.node := client
+    (client, blockDuringReset)
+  }
 
   override lazy val module = new HarnessLikeImpl
 
@@ -59,10 +69,16 @@ class Arty100THarness(override implicit val p: Parameters) extends Arty100TShell
     childClock := harnessBinderClock
     childReset := harnessBinderReset
 
-    ddrOverlay.mig.module.clock := harnessBinderClock
-    ddrOverlay.mig.module.reset := harnessBinderReset
-    ddrBlockDuringReset.module.clock := harnessBinderClock
-    ddrBlockDuringReset.module.reset := harnessBinderReset.asBool || !ddrOverlay.mig.module.io.port.init_calib_complete
+    // Hold the memory port off until the controller has finished calibrating.
+    ddrOverlay.foreach { o =>
+      o.mig.module.clock := harnessBinderClock
+      o.mig.module.reset := harnessBinderReset
+    }
+    ddrClient.foreach { case (_, blockDuringReset) =>
+      blockDuringReset.module.clock := harnessBinderClock
+      blockDuringReset.module.reset := harnessBinderReset.asBool ||
+        !ddrOverlay.get.mig.module.io.port.init_calib_complete
+    }
 
     instantiateChipTops()
   }
