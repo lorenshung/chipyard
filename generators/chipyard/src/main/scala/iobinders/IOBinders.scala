@@ -25,6 +25,7 @@ import sifive.blocks.devices.gpio._
 import sifive.blocks.devices.uart._
 import sifive.blocks.devices.spi._
 import sifive.blocks.devices.i2c._
+import sifive.blocks.devices.pwm._
 import tracegen.{TraceGenSystemModuleImp}
 
 import chipyard.iocell._
@@ -208,6 +209,24 @@ class WithI2CPunchthrough extends OverrideIOBinder({
       val io_i2c = IO(i2c.cloneType).suggestName(s"i2c_$i")
       io_i2c <> i2c
       I2CPort(() => io_i2c)
+    }
+    (ports, Nil)
+  }
+})
+
+// Brings the sifive PWM comparator outputs out of DigitalTop.
+//
+// Without this the outputs have no consumer anywhere above the controller, and
+// firtool removes the whole path: in a shell built with PeripheryPWMKey set but
+// no binder, the generated TLPWM has no gpio port at all. The comparators still
+// count and the registers still read back, so software looks healthy while
+// nothing can ever reach a pin.
+class WithPWMPunchthrough extends OverrideIOBinder({
+  (system: HasPeripheryPWM) => {
+    val ports = system.pwm.zipWithIndex.map { case (p, i) =>
+      val io_pwm = IO(p.cloneType).suggestName(s"pwm_$i")
+      io_pwm <> p
+      PWMPort(() => io_pwm, i)
     }
     (ports, Nil)
   }

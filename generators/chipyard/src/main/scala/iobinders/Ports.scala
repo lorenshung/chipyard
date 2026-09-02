@@ -5,6 +5,7 @@ import chisel3.experimental.{Analog}
 import sifive.blocks.devices.uart.{UARTPortIO}
 import sifive.blocks.devices.spi.{SPIFlashParams, SPIPortIO}
 import sifive.blocks.devices.gpio.{GPIOPortIO}
+import sifive.blocks.devices.pwm.{PWMPortIO}
 import testchipip.util.{ClockedIO}
 import testchipip.serdes.{TLSerdesser, SerialIO, SerialTLParams}
 import testchipip.spi.{SPIChipIO}
@@ -51,6 +52,14 @@ case class SPIFlashPort    (val getIO: () => SPIChipIO, val params: SPIFlashPara
 
 case class SPIPort         (val getIO: () => SPIPortIO)
     extends Port[SPIPortIO]
+
+// One port per PWM controller, carrying that block's whole comparator vector.
+// Unlike GPIOPort, which chipyard splits one-per-pin, a PWM block's outputs are
+// only meaningful together: comparator 0 sets the shared period and cannot be
+// used as an output, so a binder has to see the vector to know which indices
+// are real channels.
+case class PWMPort         (val getIO: () => PWMPortIO, val pwmId: Int)
+    extends Port[PWMPortIO]
 
 case class BlockDevicePort (val getIO: () => ClockedIO[BlockDeviceIO], val params: BlockDeviceConfig)
     extends Port[ClockedIO[BlockDeviceIO]]
