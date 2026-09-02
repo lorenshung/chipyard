@@ -48,6 +48,13 @@ class ControlIO(p: CaptureParams) extends Bundle {
   val mclkDiv    = Input(UInt(p.mclkDivWidth.W))      // MCLK = sysclk / (2*(mclkDiv+1))
   val expWidth   = Input(UInt(p.pixCountWidth.W))     // expected frame width  (for geomErr)
   val expHeight  = Input(UInt(p.lineCountWidth.W))    // expected frame height (for geomErr)
+
+  // ---- Bounded ("armed") capture, for bring-up ----
+  // pixelTarget == 0 keeps the historical free-running behaviour: every beat is presented.
+  // A non-zero target makes the core present exactly that many pixel beats after `arm`, then stop
+  // cleanly -- while still draining the CDC FIFO, so stopping never manufactures a false overflow.
+  val arm         = Input(Bool())                     // pulse: start a bounded capture
+  val pixelTarget = Input(UInt(32.W))                 // pixels to capture; 0 = unbounded
 }
 
 /** SoC-facing status / events. */
@@ -61,6 +68,20 @@ class StatusIO(p: CaptureParams) extends Bundle {
   val sensorInt  = Output(Bool())                     // synchronized sensor INT level
   val busy       = Output(Bool())                     // synchronized FVLD level (inside a frame)
   val irq        = Output(Bool())                     // frameDone & irqEnable
+
+  // ---- Bring-up diagnostics ----
+  // These exist because hardware bring-up has no ILA: they are the only way to tell "the sensor
+  // is not clocking" apart from "the sensor clocks but never asserts FVLD" apart from "sync is
+  // fine but no pixel data arrives". Each is counted in the PCLK domain and crossed into the
+  // system domain as a Gray code, so a read is always a coherent (possibly stale) sample.
+  val pclkCount  = Output(UInt(p.diagCountWidth.W))   // PCLK rising edges observed
+  val fvldRises  = Output(UInt(p.diagCountWidth.W))   // FVLD rising edges (frame starts) observed
+  val lvldRises  = Output(UInt(p.diagCountWidth.W))   // LVLD rising edges (line starts) observed
+
+  val armed          = Output(Bool())                 // a bounded capture is in progress
+  val captureDone    = Output(Bool())                 // bounded capture reached its target
+  val capturedPixels = Output(UInt(32.W))             // pixel beats presented in this capture
+  val lastPixel      = Output(UInt(p.dataWidth.W))    // most recent pixel value presented
 }
 
 /** IO for [[CaptureFrontend]]. Named so member access doesn't require structural-type reflection. */

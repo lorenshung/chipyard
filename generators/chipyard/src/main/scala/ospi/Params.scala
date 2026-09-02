@@ -18,13 +18,16 @@ case class CaptureParams(
   maxHeight:    Int = 324,
   fifoDepth:    Int = 1024, // CDC FIFO depth (power of two)
   syncStages:   Int = 3,    // metastability synchronizer flop stages
-  mclkDivWidth: Int = 8     // width of the MCLK divider compare value
+  mclkDivWidth: Int = 8,    // width of the MCLK divider compare value
+  diagCountWidth: Int = 32  // width of the PCLK/FVLD/LVLD bring-up diagnostic counters
 ) {
   require(dataWidth == 8, "v1 supports 8-bit parallel mode only")
   require(defaultWidth > 0 && defaultWidth <= maxWidth, "defaultWidth must fit maxWidth")
   require(defaultHeight > 0 && defaultHeight <= maxHeight, "defaultHeight must fit maxHeight")
   require(isPow2(fifoDepth) && fifoDepth >= 4, "fifoDepth must be a power of two >= 4")
   require(syncStages >= 2, "need >= 2 synchronizer stages for CDC")
+  require(diagCountWidth >= 2 && diagCountWidth <= 32,
+    "diagnostic counters are read through 32-bit MMIO registers")
 
   /** Width to count pixels within a line: 0 .. maxWidth. */
   val pixCountWidth: Int = log2Ceil(maxWidth + 1)

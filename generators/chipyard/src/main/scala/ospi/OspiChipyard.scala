@@ -21,8 +21,12 @@ case class OspiParams(
   captureFifoDepth: Int    = 1024,
   frameBufferDepth: Int    = 324 * 324 + 1
 ) {
-  require(frameBufferDepth >= maxWidth * maxHeight + 1,
-    "frameBufferDepth must hold a maximum-size frame and its EOF marker")
+  // A full-frame buffer is what a streaming configuration needs. A bring-up configuration
+  // deliberately sizes this for a single line instead, so the requirement is that the buffer can
+  // hold whatever bounded capture software asks for -- checked in software via CAPACITY -- with a
+  // floor that keeps the EOF marker from displacing pixel data.
+  require(frameBufferDepth >= 2, "frameBufferDepth must hold at least a pixel and its EOF marker")
+  def holdsFullFrame: Boolean = frameBufferDepth >= maxWidth * maxHeight + 1
 }
 
 case object OspiKey extends Field[Option[OspiParams]](None)
@@ -47,6 +51,16 @@ case object OspiKey extends Field[Option[OspiParams]](None)
   *                  [5]=irqPending [6]=frameBufferFull (RO)
   *   0x20 DATA      nonblocking read/pop: [31]=valid [10]=eof [9]=eol [8]=sof [7:0]=data
   *   0x24 CAPACITY  frame-buffer capacity in beats (RO)
+  *
+  * Bring-up diagnostics. There is no ILA on this board, so these counters and the sticky flags
+  * above are the only observability into the sensor interface:
+  *   0x28 PIXTARGET pixels to capture after ARM; 0 = free-running (RW)
+  *   0x2c CAPCOUNT  pixel beats captured in the current/last bounded capture (RO)
+  *   0x30 PCLKCNT   PCLK rising edges observed (RO) -- zero means no camera clock at all
+  *   0x34 FVLDCNT   FVLD rising edges observed (RO) -- zero means no frame sync
+  *   0x38 LVLDCNT   LVLD rising edges observed (RO) -- zero means no line sync
+  *   0x3c LASTPIX   [7:0] most recent pixel value presented (RO)
+  *   0x40 CAPSTAT   [0]=armed [1]=captureDone (RO)
   */
 class OspiCapture(params: OspiParams, beatBytes: Int)(implicit p: Parameters)
     extends ClockSinkDomain(ClockSinkParameters())(p) {
@@ -94,9 +108,11 @@ class OspiCapture(params: OspiParams, beatBytes: Int)(implicit p: Parameters)
       val geomInit      = (BigInt(cp.defaultHeight) << 16) | BigInt(cp.defaultWidth)
       val geomReg       = RegInit(geomInit.U(32.W))
       val mclkDivReg    = RegInit(0.U(cp.mclkDivWidth.W))
+      val pixTargetReg  = RegInit(0.U(32.W))
       val triggerPulse  = WireDefault(false.B)
       val clearPulse    = WireDefault(false.B)
       val flushPulse    = WireDefault(false.B)
+      val armPulse      = WireDefault(false.B)
 
       val triggerWrite = RegWriteFn((valid: Bool, data: UInt) => {
         triggerPulse := valid && data(0)
@@ -110,6 +126,10 @@ class OspiCapture(params: OspiParams, beatBytes: Int)(implicit p: Parameters)
         flushPulse := valid && data(0)
         true.B
       })
+      val armWrite = RegWriteFn((valid: Bool, data: UInt) => {
+        armPulse := valid && data(0)
+        true.B
+      })
 
       capture.io.ctrl.enable     := enableReg
       capture.io.ctrl.continuous := continuousReg
@@ -119,6 +139,8 @@ class OspiCapture(params: OspiParams, beatBytes: Int)(implicit p: Parameters)
       capture.io.ctrl.mclkDiv    := mclkDivReg
       capture.io.ctrl.expWidth   := geomReg(cp.pixCountWidth - 1, 0)
       capture.io.ctrl.expHeight  := geomReg(16 + cp.lineCountWidth - 1, 16)
+      capture.io.ctrl.arm        := armPulse
+      capture.io.ctrl.pixelTarget := pixTargetReg
 
       // Drain the CDC FIFO autonomously. Pause both handshakes for the flush cycle; buffered CDC
       // or elastic-stage beats remain in order and resume on the next cycle.
@@ -172,7 +194,8 @@ class OspiCapture(params: OspiParams, beatBytes: Int)(implicit p: Parameters)
           RegField.w(1, triggerWrite),
           RegField.w(1, clearWrite),
           RegField.w(1, flushWrite),
-          RegField(26)),
+          RegField.w(1, armWrite),
+          RegField(25)),
         0x04 -> Seq(RegField(32, geomReg)),
         0x08 -> Seq(RegField(cp.mclkDivWidth, mclkDivReg)),
         0x0c -> Seq(RegField.r(32, frameBuffer.io.count.pad(32))),
@@ -181,7 +204,14 @@ class OspiCapture(params: OspiParams, beatBytes: Int)(implicit p: Parameters)
         0x18 -> Seq(RegField.r(16, capture.io.status.lastHeight.pad(16))),
         0x1c -> Seq(RegField.r(7, flags)),
         0x20 -> Seq(RegField.r(32, dataRead)),
-        0x24 -> Seq(RegField.r(32, params.frameBufferDepth.U(32.W)))
+        0x24 -> Seq(RegField.r(32, params.frameBufferDepth.U(32.W))),
+        0x28 -> Seq(RegField(32, pixTargetReg)),
+        0x2c -> Seq(RegField.r(32, capture.io.status.capturedPixels)),
+        0x30 -> Seq(RegField.r(32, capture.io.status.pclkCount.pad(32))),
+        0x34 -> Seq(RegField.r(32, capture.io.status.fvldRises.pad(32))),
+        0x38 -> Seq(RegField.r(32, capture.io.status.lvldRises.pad(32))),
+        0x3c -> Seq(RegField.r(8, capture.io.status.lastPixel.pad(8))),
+        0x40 -> Seq(RegField.r(2, Cat(capture.io.status.captureDone, capture.io.status.armed)))
       )
     }
   }

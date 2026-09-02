@@ -31,6 +31,50 @@ class HM01B0Capture(p: CaptureParams = CaptureParams()) extends Module {
       (0 until p.syncStages).foldLeft(sig) { (prev, _) => RegNext(prev, false.B) }
     }
 
+  // ---- Bring-up diagnostic counters (PCLK domain -> system domain) ----
+  // Gray -> binary. Only the destination domain calls this, on an already-synchronized value.
+  private def gray2bin(g: UInt, width: Int): UInt = {
+    val b = Wire(Vec(width, Bool()))
+    b(width - 1) := g(width - 1)
+    for (i <- (0 until width - 1).reverse) { b(i) := b(i + 1) ^ g(i) }
+    b.asUInt
+  }
+
+  /** A counter incremented in the PCLK domain, readable in the system domain.
+    *
+    * The counter is binary in its own domain and is launched as a *registered* Gray code, so at
+    * most one bit changes per increment and the synchronizer chain can only ever resolve to the
+    * value before or after an increment -- never a mixture. That is what makes a multibit count
+    * safe to cross; independent per-bit synchronizers on a binary counter would not be.
+    *
+    * If the sensor never drives PCLK the counter never advances and reads back zero, which is
+    * exactly the "no camera clock" signature bring-up needs to distinguish.
+    */
+  private def crossCount(inc: Bool): UInt = {
+    val w = p.diagCountWidth
+    val grayLaunch = withClockAndReset(io.sensor.pclk, pclkRst.asAsyncReset) {
+      val bin = RegInit(0.U(w.W))
+      when(inc) { bin := bin + 1.U }
+      RegNext(bin ^ (bin >> 1), 0.U(w.W))
+    }
+    val synced = (0 until p.syncStages).foldLeft(grayLaunch) { (prev, _) =>
+      RegNext(prev, 0.U(w.W))
+    }
+    gray2bin(synced, w)
+  }
+
+  // Rising-edge detectors live in the PCLK domain, where FVLD/LVLD are already synchronous.
+  private val (fvldRise, lvldRise) =
+    withClockAndReset(io.sensor.pclk, pclkRst.asAsyncReset) {
+      val fvPrev = RegNext(io.sensor.fvld, false.B)
+      val lvPrev = RegNext(io.sensor.lvld, false.B)
+      (io.sensor.fvld && !fvPrev, io.sensor.lvld && !lvPrev)
+    }
+
+  io.status.pclkCount := crossCount(true.B)
+  io.status.fvldRises := crossCount(fvldRise)
+  io.status.lvldRises := crossCount(lvldRise)
+
   // ---- PCLK-domain capture front-end ----
   private val frontend = withClockAndReset(io.sensor.pclk, pclkRst.asAsyncReset) {
     Module(new CaptureFrontend(p))
@@ -51,10 +95,41 @@ class HM01B0Capture(p: CaptureParams = CaptureParams()) extends Module {
   fifo.enq.valid := frontend.io.out.valid
   fifo.enq.bits  := frontend.io.out.bits
 
+  // ---- Bounded capture gate ----
+  // With a non-zero target the core presents beats only while a capture is armed and incomplete.
+  // When it is not storing it still asserts ready, so the CDC FIFO keeps draining and a completed
+  // capture cannot back-pressure the front-end into a spurious overflow.
+  private val bounded   = io.ctrl.pixelTarget =/= 0.U
+  private val armedReg  = RegInit(false.B)
+  private val doneReg   = RegInit(false.B)
+  private val capCount  = RegInit(0.U(32.W))
+  private val lastPixR  = RegInit(0.U(p.dataWidth.W))
+  private val storing   = !bounded || (armedReg && !doneReg)
+
   // ---- System-domain consumer: forward stream to SoC and measure geometry ----
-  io.pixels.valid  := fifo.deq.valid
+  io.pixels.valid  := fifo.deq.valid && storing
   io.pixels.bits   := fifo.deq.bits
-  fifo.deq.ready   := io.pixels.ready
+  fifo.deq.ready   := Mux(storing, io.pixels.ready, true.B)
+
+  when(io.ctrl.arm) {
+    armedReg := true.B
+    doneReg  := false.B
+    capCount := 0.U
+  }
+  when(io.pixels.fire && !io.pixels.bits.eof) {
+    lastPixR := io.pixels.bits.data
+    val next = capCount + 1.U
+    capCount := next
+    when(bounded && next >= io.ctrl.pixelTarget) {
+      doneReg  := true.B
+      armedReg := false.B
+    }
+  }
+
+  io.status.armed          := armedReg
+  io.status.captureDone    := doneReg
+  io.status.capturedPixels := capCount
+  io.status.lastPixel      := lastPixR
 
   private val pixCol    = RegInit(0.U(p.pixCountWidth.W))
   private val rowCnt    = RegInit(0.U(p.lineCountWidth.W))
