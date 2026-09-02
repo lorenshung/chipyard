@@ -143,6 +143,77 @@ class FireSimRiskyBirdGemminiQ31SaturnV128D128Fp16FullConfig extends Config(
   new freechips.rocketchip.rocket.WithNHugeCores(1) ++
   new chipyard.config.AbstractConfig)
 
+/** The Fp16 SoC with `mvin_scale_args` and LoopConv both removed -- config A of
+ *  the co-design pair in `docs/ku040-codesign-cnn.md`.
+ *
+ *  Base chain copied from
+ *  `Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleNoLoopConvOspiSingleDDRKU040Config`
+ *  in `fpga/src/main/scala/ku040/Configs.scala`. It differs from the Fp16Full
+ *  wrapper above in the Gemmini layer alone: `Q31GemminiConfig` with
+ *  `mvin_scale_args = None` and `has_loop_conv = false` instead of the stock
+ *  `Q31Ws32x32AccGemminiConfig`. Everything else -- Saturn `robotMpcParams`,
+ *  `WithRocketFPU16`, bus width, hart count -- is identical.
+ *
+ *  Removing LoopConv removes hardware, so the software must take the scalar
+ *  fallback path (`im2col_full_C` + scalar maxpool) rather than
+ *  `tiled_conv_auto`. That is the point of the pair: this target measures what
+ *  the LoopConv-free machine actually costs in cycles, against config B's
+ *  `CnnNavKU040Config`, instead of predicting it.
+ *
+ *  Memory note: its KU040 counterpart is the `OspiSingleDDR` variant, so the
+ *  KU040 side is DDR4-backed (`ddr = true, ddrControllers = 1`) rather than the
+ *  32 KiB scratchpad the earlier shells wired. That closes most of the memory
+ *  divergence called out above -- both sides now have real DRAM behind the
+ *  accelerator. What remains is the cache hierarchy: `WithFireSimConfigTweaks`
+ *  models an L2 where the KU040 config keeps `WithBroadcastManager`.
+ */
+class FireSimRiskyBirdGemminiQ31SaturnV128D128Fp16NoMvinScaleNoLoopConvConfig extends Config(
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(
+      useElementwiseFP64 = true,
+      noPermute = true)) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new gemmini.Q31GemminiConfig(
+    gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(
+      mvin_scale_args = None,
+      has_loop_conv = false)) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
+/** The flight3 SoC as built: LoopConv kept, mvin-scale dropped.
+ *
+ *  FireSim counterpart of
+ *  `Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleOspiSingleDDRKU040Config`,
+ *  which is the deployable point -- the NoLoopConv wrapper above is its timing
+ *  experiment and is kept only so the pair can be compared. Differs from that
+ *  wrapper in one field, `has_loop_conv` back at its default, and from
+ *  `…Fp16FullConfig` in one other, `mvin_scale_args = None`.
+ *
+ *  Memory: the KU040 counterpart is the single-controller DDR4 variant
+ *  (`ddr = true, ddrControllers = 1`), so both sides of this pair have real DRAM
+ *  behind the accelerator. The remaining divergence is the cache hierarchy --
+ *  `WithFireSimConfigTweaks` models an L2 where the KU040 config keeps
+ *  `WithBroadcastManager` -- plus the usual 1000 MHz bus frequency, which
+ *  changes wall time and not cycles.
+ */
+class FireSimRiskyBirdGemminiQ31SaturnV128D128Fp16NoMvinScaleConfig extends Config(
+  new WithDefaultFireSimBridges ++
+  new WithFireSimConfigTweaks ++
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(
+      useElementwiseFP64 = true,
+      noPermute = true)) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new gemmini.Q31GemminiConfig(
+    gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(
+      mvin_scale_args = None)) ++   // has_loop_conv defaults to true
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
 /* ---------------------------------------------------------------------------
  * Fingerprint probes
  *
@@ -201,6 +272,55 @@ class FireSimRiskyBirdGemminiQ31SaturnV128D128Fp16FullTargetConfig extends Confi
       noPermute = true)) ++
   new freechips.rocketchip.rocket.WithRocketFPU16 ++
   new gemmini.Q31Ws32x32AccGemminiConfig ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
+/** Fingerprint probe for
+ *  `FireSimRiskyBirdGemminiQ31SaturnV128D128Fp16NoMvinScaleNoLoopConvConfig`,
+ *  whose KU040 counterpart is
+ *  `Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleNoLoopConvOspiSingleDDRKU040Config`.
+ *
+ *  `has_loop_conv` and `mvin_scale_args` both change the Gemmini module
+ *  inventory, so this probe has to carry them: extracting against the Fp16Full
+ *  probe instead would report accelerator collateral this machine does not have.
+ */
+class FireSimRiskyBirdGemminiQ31SaturnV128D128Fp16NoMvinScaleNoLoopConvTargetConfig extends Config(
+  new chipyard.harness.WithBlockDeviceModel ++
+  new WithFireSimConfigTweaks ++
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(
+      useElementwiseFP64 = true,
+      noPermute = true)) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new gemmini.Q31GemminiConfig(
+    gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(
+      mvin_scale_args = None,
+      has_loop_conv = false)) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
+/** Fingerprint probe for
+ *  `FireSimRiskyBirdGemminiQ31SaturnV128D128Fp16NoMvinScaleConfig`, whose KU040
+ *  counterpart is
+ *  `Q31Ws32x32AccGemminiSaturnV128D128Fp16NoMvinScaleOspiSingleDDRKU040Config`.
+ *
+ *  Distinct from the NoLoopConv probe above by `has_loop_conv` alone, which is
+ *  exactly the difference `fingerprint.py` learned to see -- the two land on
+ *  different `identity_id`s only because the LoopConv modules are now recorded.
+ */
+class FireSimRiskyBirdGemminiQ31SaturnV128D128Fp16NoMvinScaleTargetConfig extends Config(
+  new chipyard.harness.WithBlockDeviceModel ++
+  new WithFireSimConfigTweaks ++
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(
+      useElementwiseFP64 = true,
+      noPermute = true)) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new gemmini.Q31GemminiConfig(
+    gemmini.GemminiQ31WsConfigs.q31Ws32x32AccConfig.copy(
+      mvin_scale_args = None)) ++   // has_loop_conv defaults to true
   new chipyard.config.WithSystemBusWidth(128) ++
   new freechips.rocketchip.rocket.WithNHugeCores(1) ++
   new chipyard.config.AbstractConfig)
