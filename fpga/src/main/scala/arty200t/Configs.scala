@@ -367,3 +367,30 @@ class RocketArty200TDroneFullDDRConfig extends Config(
   new WithArty200TTweaks(ddr = true, uartTsi = false) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
+
+/** OSPI periphery with the DMA-capable capture peripheral (adds a TileLink master to DDR).
+ *  Byte-for-byte mirror of WithArty200TOspiPeriphery except it swaps WithOspiCapture for
+ *  WithOspiCaptureDma, which flips OspiParams.enableDma. */
+class WithArty200TOspiDmaPeriphery extends Config(
+  new WithArty200TI2C ++
+  new WithArty200TOspi ++
+  new chipyard.iobinders.WithOspiPunchthrough ++
+  new ospi.WithOspiCaptureDma ++
+  new chipyard.config.WithI2C)
+
+/** RocketArty200TDroneFullDDRConfig, but with the DMA-capable camera OSPI peripheral: captured
+ *  frames are DMA'd straight to a software-configured DDR buffer by hardware (TileLink master),
+ *  instead of the CPU polling the DATA drain register. Identical DDR3 + I2C + SPI + PWM(x2) + GPIO
+ *  + ESP UART (E13/F14) set; only the OSPI periphery differs. */
+class RocketArty200TDroneFullDDRDmaConfig extends Config(
+  new WithArty200TUART("E13", "F14", uartNo = 1) ++       // ESP UART = uart1 on E13/F14
+  new chipyard.config.WithUART(address = 0x10021000) ++   // add uart1 (console uart0 stays 0x10020000)
+  new WithArty200TPWM ++
+  new chipyard.iobinders.WithPWMPunchthrough ++
+  new WithArty200TSPI ++
+  new WithArty200TGPIO ++
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithArty200TOspiDmaPeriphery ++
+  new WithArty200TTweaks(ddr = true, uartTsi = false) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)

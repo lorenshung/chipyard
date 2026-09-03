@@ -3,7 +3,7 @@ package ospi
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.{Config, Field, Parameters}
-import freechips.rocketchip.subsystem.{BaseSubsystem, PBUS}
+import freechips.rocketchip.subsystem.{BaseSubsystem, PBUS, FBUS}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.interrupts.{IntSourceNode, IntSourcePortSimple}
 import freechips.rocketchip.prci._
@@ -19,7 +19,11 @@ case class OspiParams(
   maxWidth:         Int    = 324,
   maxHeight:        Int    = 324,
   captureFifoDepth: Int    = 1024,
-  frameBufferDepth: Int    = 324 * 324 + 1
+  frameBufferDepth: Int    = 324 * 324 + 1,
+  // When true the peripheral gains a TileLink *master* (DMA) port that writes captured pixel
+  // bytes straight into DDR, in addition to the existing MMIO drain register. Defaults to false
+  // so every existing config elaborates byte-for-byte identically (no extra diplomatic node).
+  enableDma:        Boolean = false
 ) {
   // A full-frame buffer is what a streaming configuration needs. A bring-up configuration
   // deliberately sizes this for a single line instead, so the requirement is that the buffer can
@@ -61,6 +65,20 @@ case object OspiKey extends Field[Option[OspiParams]](None)
   *   0x38 LVLDCNT   LVLD rising edges observed (RO) -- zero means no line sync
   *   0x3c LASTPIX   [7:0] most recent pixel value presented (RO)
   *   0x40 CAPSTAT   [0]=armed [1]=captureDone (RO)
+  *
+  * DMA path (only present when `enableDma`). When enabled, hardware drains the frame buffer into a
+  * software-configured DDR buffer over a TileLink master port instead of the CPU polling DATA. The
+  * MMIO DATA drain (0x20) still exists but is *inhibited* while DMA_CTRL.enable is set so the two
+  * consumers never race on the frame buffer's read port. One byte is packed per pixel, little-endian
+  * within a beat (pixel N lands at DMA_ADDR + N):
+  *   0x44 DMA_ADDR_LO [31:0]  low  word of the 64-bit DDR target base address (RW)
+  *   0x48 DMA_ADDR_HI [31:0]  high word of the 64-bit DDR target base address (RW)
+  *   0x4c DMA_LEN     byte cap for one transfer; 0 = drain until the in-band EOF marker (RW)
+  *   0x50 DMA_CTRL    [0]=enable (route drain to DMA, inhibit MMIO DATA)
+  *                    [2]=auto  (start a transfer automatically when a frame completes)
+  *                    write-one pulses: [1]=start (kick a transfer now), [3]=clear done/error
+  *   0x54 DMA_STATUS  [0]=busy [1]=done [2]=error [3]=sawEof [7:4]=engine state (RO)
+  *   0x58 DMA_BYTES   bytes written to DDR by the current/last transfer (RO)
   */
 class OspiCapture(params: OspiParams, beatBytes: Int)(implicit p: Parameters)
     extends ClockSinkDomain(ClockSinkParameters())(p) {
@@ -71,6 +89,15 @@ class OspiCapture(params: OspiParams, beatBytes: Int)(implicit p: Parameters)
     "reg/control",
     beatBytes = beatBytes)
   val intnode = IntSourceNode(IntSourcePortSimple(num = 1, resources = device.int))
+
+  // Optional TileLink master (DMA) node. Created only when DMA is enabled so that non-DMA configs
+  // introduce no dangling diplomatic node. A single in-flight transaction (sourceId 0..1) with
+  // default (all-address) visibility, matching chipyard's InitZero / testchipip BlockDevice masters.
+  val dmaNode: Option[TLClientNode] =
+    if (params.enableDma)
+      Some(TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLClientParameters(
+        name = "ospi-dma", sourceId = IdRange(0, 1)))))))
+    else None
 
   override lazy val module = new OspiImpl
   class OspiImpl extends Impl {
@@ -152,10 +179,176 @@ class OspiCapture(params: OspiParams, beatBytes: Int)(implicit p: Parameters)
       capturePipe.io.deq.ready := frameBuffer.io.enq.ready && !flushPulse
       frameBuffer.io.flush     := flushPulse
 
+      // ---- Optional DMA engine (TileLink master). ----
+      // Shared handles so the frame-buffer read-port mux and the interrupt/regmap below can be
+      // written uniformly whether or not DMA is compiled in.
+      val dmaEnableReg = RegInit(false.B)            // route drain to DMA + inhibit MMIO DATA
+      val dmaPopReady  = WireDefault(false.B)        // DMA-side frame-buffer pop request
+      val dmaDonePulse = WireDefault(false.B)        // 1-cycle: a transfer just finished
+      // Status wires surfaced to the regmap (constant when DMA is not compiled in).
+      val dmaBusy      = WireDefault(false.B)
+      val dmaDone      = WireDefault(false.B)
+      val dmaError     = WireDefault(false.B)
+      val dmaSawEof    = WireDefault(false.B)
+      val dmaState     = WireDefault(0.U(4.W))
+      val dmaBytesOut  = WireDefault(0.U(32.W))
+      // DMA control/config registers exist unconditionally (harmless RW scratch when DMA is off),
+      // but only take effect when the master node is present.
+      val dmaAddrLoReg = RegInit(0.U(32.W))
+      val dmaAddrHiReg = RegInit(0.U(32.W))
+      val dmaLenReg    = RegInit(0.U(32.W))
+      val dmaAutoReg   = RegInit(false.B)
+      val dmaStartPulse = WireDefault(false.B)
+      val dmaClearPulse = WireDefault(false.B)
+
+      val dmaStartWrite = RegWriteFn((valid: Bool, data: UInt) => {
+        dmaStartPulse := valid && data(0)
+        true.B
+      })
+      val dmaClearWrite = RegWriteFn((valid: Bool, data: UInt) => {
+        dmaClearPulse := valid && data(0)
+        true.B
+      })
+
+      dmaNode.foreach { dn =>
+        val (mem, edge) = dn.out(0)
+        val addrBits = edge.bundle.addressBits
+        val busBytes = edge.bundle.dataBits / 8
+        require(busBytes >= 1)
+        val lgBeat   = log2Ceil(busBytes)
+        val cntW     = log2Ceil(busBytes + 1)
+
+        // Byte-packing buffer: one captured pixel byte per lane, little-endian within a beat.
+        val msgBuffer    = Reg(Vec(busBytes, UInt(8.W)))
+        val collectCount = RegInit(0.U(cntW.W))
+        val bytesWritten = RegInit(0.U(32.W))
+        val busyReg      = RegInit(false.B)
+        val doneReg      = RegInit(false.B)
+        val errReg       = RegInit(false.B)
+        val sawEofReg    = RegInit(false.B)
+        val finalBeat    = RegInit(false.B)
+        val pendingStart = RegInit(false.B)
+
+        val dIdle :: dCollect :: dWrite :: dResp :: dFinish :: Nil = Enum(5)
+        val dstate = RegInit(dIdle)
+
+        // A transfer is kicked either by an explicit start pulse or, in auto mode, when a whole
+        // frame (its EOF marker) has just been committed to the frame buffer.
+        when(dmaStartPulse || (dmaAutoReg && frameBuffer.io.frameReady)) {
+          pendingStart := true.B
+        }
+
+        // Byte cap: bytesWritten already committed + bytes staged this beat.
+        val lenReached = (dmaLenReg =/= 0.U) &&
+          ((bytesWritten +& collectCount) >= dmaLenReg)
+
+        // Single-beat PutFullData for a full beat; PutPartialData (masked) for a short tail beat.
+        val writeAddr   = (Cat(dmaAddrHiReg, dmaAddrLoReg) +& bytesWritten)(addrBits - 1, 0)
+        val beatData    = Cat(msgBuffer.reverse) // msgBuffer(0) -> least-significant byte lane
+        val fullBeat    = collectCount === busBytes.U
+        val partialMask = ((1.U << collectCount) - 1.U)(busBytes - 1, 0)
+        val putFull = edge.Put(
+          fromSource = 0.U, toAddress = writeAddr, lgSize = lgBeat.U, data = beatData)._2
+        val putPart = edge.Put(
+          fromSource = 0.U, toAddress = writeAddr, lgSize = lgBeat.U,
+          data = beatData, mask = partialMask)._2
+
+        mem.a.valid := dstate === dWrite
+        mem.a.bits  := Mux(fullBeat, putFull, putPart)
+        mem.d.ready := dstate === dResp
+        // Master issues only Get/Put on A; tie off the coherence channels we never use.
+        mem.b.ready := false.B
+        mem.c.valid := false.B
+        mem.e.valid := false.B
+
+        switch(dstate) {
+          is(dIdle) {
+            busyReg := false.B
+            when(dmaEnableReg && pendingStart) {
+              pendingStart := false.B
+              busyReg      := true.B
+              doneReg      := false.B
+              errReg       := false.B
+              sawEofReg    := false.B
+              finalBeat    := false.B
+              collectCount := 0.U
+              bytesWritten := 0.U
+              dstate       := dCollect
+            }
+          }
+          is(dCollect) {
+            when(lenReached) {
+              finalBeat := true.B
+              dstate    := Mux(collectCount === 0.U, dFinish, dWrite)
+            }.elsewhen(frameBuffer.io.deq.valid) {
+              dmaPopReady := true.B // pop this flit (deq.ready is muxed to this below)
+              when(frameBuffer.io.deq.bits.eof) {
+                sawEofReg := true.B
+                finalBeat := true.B
+                dstate    := Mux(collectCount === 0.U, dFinish, dWrite)
+              }.otherwise {
+                msgBuffer(collectCount) := frameBuffer.io.deq.bits.data
+                val nextCount = collectCount + 1.U
+                collectCount := nextCount
+                when(nextCount === busBytes.U) {
+                  finalBeat := false.B
+                  dstate    := dWrite
+                }
+              }
+            }
+            // else: frame buffer momentarily empty -> hold in dCollect until more data / EOF.
+          }
+          is(dWrite) {
+            when(mem.a.fire) { dstate := dResp }
+          }
+          is(dResp) {
+            when(mem.d.fire) {
+              bytesWritten := bytesWritten + collectCount
+              errReg       := errReg || mem.d.bits.denied || mem.d.bits.corrupt
+              collectCount := 0.U
+              dstate       := Mux(finalBeat, dFinish, dCollect)
+            }
+          }
+          is(dFinish) {
+            busyReg      := false.B
+            doneReg      := true.B
+            dmaDonePulse := true.B
+            dstate       := dIdle
+          }
+        }
+
+        when(dmaClearPulse) {
+          doneReg := false.B
+          errReg  := false.B
+        }
+
+        dmaBusy     := busyReg
+        dmaDone     := doneReg
+        dmaError    := errReg
+        dmaSawEof   := sawEofReg
+        dmaState    := dstate.pad(4)
+        dmaBytesOut := bytesWritten
+      }
+
+      // ---- Frame-buffer read-port arbitration ----
+      // Exactly one consumer pops at a time: the DMA engine when DMA is enabled, otherwise the
+      // nonblocking MMIO DATA register. This keeps the legacy drain path bit-identical when DMA is
+      // off or not compiled in.
+      val mmioPopReady = WireDefault(false.B)
+      val dmaActive    = if (params.enableDma) dmaEnableReg else false.B
+      frameBuffer.io.deq.ready := Mux(dmaActive, dmaPopReady, mmioPopReady)
+
       // Latch completion so the PLIC sees a level until software acknowledges it with CTRL.clear.
+      // In DMA mode the completion event is "frame landed in DDR" (dmaDonePulse); otherwise it is
+      // "frame committed to the frame buffer" (frameReady), preserving legacy behaviour.
       val irqPending = RegInit(false.B)
       when(clearPulse) { irqPending := false.B }
-      when(frameBuffer.io.frameReady) { irqPending := true.B }
+      if (params.enableDma) {
+        when(frameBuffer.io.frameReady && !dmaEnableReg) { irqPending := true.B }
+        when(dmaDonePulse) { irqPending := true.B }
+      } else {
+        when(frameBuffer.io.frameReady) { irqPending := true.B }
+      }
       val (interrupts, _) = intnode.out(0)
       interrupts(0) := irqPending && irqEnableReg
 
@@ -170,8 +363,8 @@ class OspiCapture(params: OspiParams, beatBytes: Int)(implicit p: Parameters)
       )
 
       // DATA never stalls TileLink. An empty read returns zero; bit 31 distinguishes that from a
-      // valid all-zero pixel. A valid read pops exactly one buffered flit.
-      frameBuffer.io.deq.ready := false.B
+      // valid all-zero pixel. A valid read pops exactly one buffered flit -- but only when DMA is
+      // not draining the buffer (dmaActive gates the pop in the mux above).
       val dataWord = Mux(frameBuffer.io.deq.valid,
         Cat(
           1.B,
@@ -182,11 +375,11 @@ class OspiCapture(params: OspiParams, beatBytes: Int)(implicit p: Parameters)
           frameBuffer.io.deq.bits.data),
         0.U(32.W))
       val dataRead = RegReadFn((ready: Bool) => {
-        frameBuffer.io.deq.ready := ready
+        mmioPopReady := ready
         (true.B, dataWord)
       })
 
-      node.regmap(
+      val baseMap: Seq[(Int, Seq[RegField])] = Seq(
         0x00 -> Seq(
           RegField(1, enableReg),
           RegField(1, continuousReg),
@@ -213,6 +406,23 @@ class OspiCapture(params: OspiParams, beatBytes: Int)(implicit p: Parameters)
         0x3c -> Seq(RegField.r(8, capture.io.status.lastPixel.pad(8))),
         0x40 -> Seq(RegField.r(2, Cat(capture.io.status.captureDone, capture.io.status.armed)))
       )
+
+      val dmaMap: Seq[(Int, Seq[RegField])] =
+        if (params.enableDma) Seq(
+          0x44 -> Seq(RegField(32, dmaAddrLoReg)),
+          0x48 -> Seq(RegField(32, dmaAddrHiReg)),
+          0x4c -> Seq(RegField(32, dmaLenReg)),
+          0x50 -> Seq(
+            RegField(1, dmaEnableReg),      // [0] enable / route to DMA
+            RegField.w(1, dmaStartWrite),   // [1] start (W1P)
+            RegField(1, dmaAutoReg),        // [2] auto-start on frame complete
+            RegField.w(1, dmaClearWrite),   // [3] clear done/error (W1P)
+            RegField(28)),
+          0x54 -> Seq(RegField.r(8, Cat(dmaState, dmaSawEof, dmaError, dmaDone, dmaBusy))),
+          0x58 -> Seq(RegField.r(32, dmaBytesOut))
+        ) else Seq()
+
+      node.regmap((baseMap ++ dmaMap): _*)
     }
   }
 }
@@ -231,6 +441,17 @@ trait CanHavePeripheryOspi { this: BaseSubsystem =>
     }
     ibus.fromSync := ospiLM.intnode
 
+    // DMA master: couple the client node onto the front bus so it reaches main memory (DDR).
+    // The peripheral runs in the pbus fixed-clock domain; with uniform bus frequencies a
+    // synchronous crossing (a TLBuffer) is the correct boundary to the fbus clock domain, mirroring
+    // the inward crossing used for the register node above.
+    ospiLM.dmaNode.foreach { dn =>
+      val fbus = locateTLBusWrapper(FBUS)
+      fbus.coupleFrom(s"${portName}_dma") {
+        _ := TLOutwardClockCrossingHelper(s"${portName}_dma_crossing", ospiLM, dn)(SynchronousCrossing())
+      }
+    }
+
     InModuleBody {
       val sensor = IO(chiselTypeOf(ospiLM.module.io)).suggestName("ospi_sensor")
       sensor <> ospiLM.module.io
@@ -245,4 +466,15 @@ class WithOspiCapture(
   frameBufferDepth: Int = 324 * 324 + 1
 ) extends Config((site, here, up) => {
   case OspiKey => Some(OspiParams(address = address, frameBufferDepth = frameBufferDepth))
+})
+
+/** Config fragment: enable the OSPI capture peripheral *with* the TileLink DMA master path.
+  * Identical to [[WithOspiCapture]] but flips `enableDma`, adding the master port and the
+  * DMA_* register block. The frame buffer must hold a full frame, since the DMA drains it after
+  * the EOF marker is committed. */
+class WithOspiCaptureDma(
+  address: BigInt = 0x10080000L,
+  frameBufferDepth: Int = 324 * 324 + 1
+) extends Config((site, here, up) => {
+  case OspiKey => Some(OspiParams(address = address, frameBufferDepth = frameBufferDepth, enableDma = true))
 })
