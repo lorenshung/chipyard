@@ -394,3 +394,43 @@ class RocketArty200TDroneFullDDRDmaConfig extends Config(
   new WithArty200TTweaks(ddr = true, uartTsi = false) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
+
+/** PMW3901 optical-flow bring-up target: RocketArty200TDroneFullDDRDmaConfig, named explicitly.
+ *
+ *  Functionally identical to RocketArty200TDroneFullDDRDmaConfig. That config ALREADY
+ *  instantiates the flow SPI (WithArty200TSPI: sck=F16, mosi=E17, miso=E16 with a weak MISO
+ *  pulldown) and the control GPIO (WithArty200TGPIO: bit0=CS=D16, bit1=reset=A20, bit2=LED=A21);
+ *  the generated shell XDC confirms all six ports are constrained. This alias exists only so the
+ *  optical-flow target is greppable by name and can be built/flashed on its own.
+ *
+ *  PIN DERIVATION -- riskybirdv3.kicad_sch netlist (PMW3901 = IC1) x the Trenz "Riskybird B2B
+ *  Pinout" sheet, cross-checked three ways: the camera DVP derivation (PCLK=W11 etc., 14/14),
+ *  the RISC-V console UART (JB1 pads 42/44 -> E21/D21), and the ESP UART1 (JB1 pads 95/97 ->
+ *  E13/F14). Each PMW3901 SPI net leaves IC1 through a series resistor to the FPGA side of a
+ *  dual-master pad pair on the JB1 (LSHM-150, 2x50) B2B connector:
+ *
+ *    SCLK  IC1.17 -> R34 -> JB1 pad 81 (module J1_82) -> F16   bank 64   sifive spi@10031000 SCK
+ *    MOSI  IC1.16 -> R29 -> JB1 pad 79 (module J1_80) -> E17   bank 64   spi dq(0)
+ *    MISO  IC1.18 -> R28 -> JB1 pad 77 (module J1_78) -> E16   bank 64   spi dq(1)
+ *    NCS   IC1.19 -> R27 -> JB1 pad 75 (module J1_76) -> D16   bank 64   gpio@10010000 bit 0 (SW CS)
+ *
+ *  base pad N <-> module pin N+1 is the same hermaphroditic B2B swap the camera derivation used
+ *  (base JB3.57 <-> module JM3.58 -> W11). SCLK's copper is on physical pad 81 (the schematic
+ *  labels that pin "Pin_61", but pad 61 itself is unconnected), so F16 -- not B15 -- is correct.
+ *
+ *  The hard SPI chip-select is deliberately left unbound; the driver holds CS low across a
+ *  multi-byte register transaction, which the sifive controller's automatic CS does not, so CS
+ *  is software-driven from gpio0 bit 0 (D16). flow.c must select gpio0 bit 0 for CS.
+ */
+class RocketArty200TDroneFullDDRDmaFlowConfig extends Config(
+  new WithArty200TUART("E13", "F14", uartNo = 1) ++       // ESP UART = uart1 on E13/F14
+  new chipyard.config.WithUART(address = 0x10021000) ++   // add uart1 (console uart0 stays 0x10020000)
+  new WithArty200TPWM ++
+  new chipyard.iobinders.WithPWMPunchthrough ++
+  new WithArty200TSPI ++                                  // PMW3901 flow SPI: sck=F16 mosi=E17 miso=E16
+  new WithArty200TGPIO ++                                 // gpio0 bit0=CS=D16, bit1=A20, bit2=A21
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithArty200TOspiDmaPeriphery ++
+  new WithArty200TTweaks(ddr = true, uartTsi = false) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
