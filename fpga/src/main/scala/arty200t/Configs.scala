@@ -351,3 +351,19 @@ class NoCoresArty200TConfig extends Config(
   new WithArty200TTweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.NoCoresConfig)
+
+/** Full drone SoC on the TE0712 drone carrier: DDR3 + I2C + SPI + PWM(x2) + GPIO + camera OSPI,
+ *  plus a SECOND peripheral UART for the ESP32 link (FPGA rxd=E13 <- ESP TX ; txd=F14 -> ESP RX).
+ *  = RocketArty200TMotorSpadConfig periphery but with DDR3 (ddr=true) and the added ESP UART. */
+class RocketArty200TDroneFullDDRConfig extends Config(
+  new WithArty200TUART("E13", "F14", uartNo = 1) ++       // ESP UART = uart1 on E13/F14
+  new chipyard.config.WithUART(address = 0x10021000) ++   // add uart1 (console uart0 stays 0x10020000)
+  new WithArty200TPWM ++
+  new chipyard.iobinders.WithPWMPunchthrough ++
+  new WithArty200TSPI ++
+  new WithArty200TGPIO ++
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithArty200TOspiPeriphery ++
+  new WithArty200TTweaks(ddr = true, uartTsi = false) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)

@@ -49,8 +49,8 @@ class WithArty200TUARTTSI extends HarnessBinder({
 })
 
 // // Maps the UART device to the on-board USB-UART
-class WithArty200TUART(rxdPin: String = "A9", txdPin: String = "D10") extends HarnessBinder({
-  case (th: HasHarnessInstantiators, port: UARTPort, chipId: Int) => {
+class WithArty200TUART(rxdPin: String = "A9", txdPin: String = "D10", uartNo: Int = 0) extends HarnessBinder({
+  case (th: HasHarnessInstantiators, port: UARTPort, chipId: Int) if port.uartNo == uartNo => {
     val ath = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[Arty200THarness]
     val harnessIO = IO(chiselTypeOf(port.io)).suggestName("uart")
     harnessIO <> port.io
@@ -301,13 +301,13 @@ class WithArty200TPWM(
 // bring-up neither is required: capture runs free-running, so TRIG is unused, and INT is only
 // the motion interrupt. Leave them disconnected unless a translator is present.
 class WithArty200TOspi(
-  dataPins: Seq[String] = Seq("H22", "J22", "K18", "K19", "L19", "L20", "J19", "H19"),
-  pclkPin: String = "H20",
-  fvldPin: String = "K22",
-  lvldPin: String = "G20",
-  intrPin: String = "V20",
-  mclkPin: String = "K21",
-  trigPin: String = "U20",
+  dataPins: Seq[String] = Seq("W16", "Y16", "AA16", "AA15", "AB15", "AB17", "AB16", "V13"),
+  pclkPin: String = "W11",
+  fvldPin: String = "W10",
+  lvldPin: String = "T14",
+  intrPin: String = "T15",
+  mclkPin: String = "W15",
+  trigPin: String = "V10",
   ioStandard: String = "LVCMOS33") extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: OspiPort, chipId: Int) => {
     val ath = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[Arty200THarness]
