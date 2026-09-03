@@ -395,6 +395,34 @@ class RocketArty200TDroneFullDDRDmaConfig extends Config(
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
 
+/** RocketArty200TDroneFullDDRDmaConfig plus a memory->UART TX DMA on the ESP link (uart1).
+ *
+ *  Byte-for-byte the same SoC as RocketArty200TDroneFullDDRDmaConfig -- same DDR3 + I2C + SPI +
+ *  PWM(x2) + GPIO + camera-OSPI-DMA + ESP UART on E13/F14, same pin constraints -- with ONE addition:
+ *  the uartdma.WithUartTxDma engine. It lets software hand a DDR buffer to hardware and have it
+ *  streamed out uart1 (0x1002_1000) with hardware flow control on the TX-FIFO-full bit, instead of
+ *  the CPU spinning per byte. The DMA drives the *existing* uart1 over the bus fabric, so it adds no
+ *  chip pins and no interrupt source (the PLIC source numbering the Zephyr overlay hardcodes is
+ *  unchanged). Its own control/status registers live in a dedicated MMIO page at 0x1002_2000 (the
+ *  page just above uart1's window); DMA_* offsets mirror the OSPI capture DMA (0x44 ADDR_LO,
+ *  0x48 ADDR_HI, 0x4c LEN, 0x50 CTRL, 0x54 STATUS, 0x58 BYTES).
+ *
+ *  RocketArty200TDroneFullDDRDmaConfig stays as the known-good fallback (this fragment is additive).
+ */
+class RocketArty200TDroneFullDDRDmaUartConfig extends Config(
+  new uartdma.WithUartTxDma(address = 0x10022000L, uartTxDataAddr = 0x10021000L) ++  // mem->uart1 TX DMA
+  new WithArty200TUART("E13", "F14", uartNo = 1) ++       // ESP UART = uart1 on E13/F14
+  new chipyard.config.WithUART(address = 0x10021000) ++   // add uart1 (console uart0 stays 0x10020000)
+  new WithArty200TPWM ++
+  new chipyard.iobinders.WithPWMPunchthrough ++
+  new WithArty200TSPI ++
+  new WithArty200TGPIO ++
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithArty200TOspiDmaPeriphery ++
+  new WithArty200TTweaks(ddr = true, uartTsi = false) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
 /** PMW3901 optical-flow bring-up target: RocketArty200TDroneFullDDRDmaConfig, named explicitly.
  *
  *  Functionally identical to RocketArty200TDroneFullDDRDmaConfig. That config ALREADY

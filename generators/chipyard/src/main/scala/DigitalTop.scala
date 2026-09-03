@@ -33,6 +33,7 @@ class DigitalTop(implicit p: Parameters) extends ChipyardSystem
   with icenet.CanHavePeripheryIceNIC // Enables optionally adding the IceNIC for FireSim
   with chipyard.example.CanHavePeripheryGCD // Enables optionally adding the GCD example widget
   with ospi.CanHavePeripheryOspi // Enables optionally adding the HM01B0 camera capture peripheral
+  with uartdma.CanHavePeripheryUartTxDma // Enables optionally adding the memory->UART TX DMA engine
   with chipyard.clocking.HasChipyardPRCI // Use Chipyard reset/clock distribution
   with chipyard.clocking.CanHaveClockTap // Enables optionally adding a clock tap output port
   with constellation.soc.CanHaveGlobalNoC // Support instantiating a global NoC interconnect
