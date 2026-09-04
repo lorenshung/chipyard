@@ -52,7 +52,7 @@ class WithArty200TUARTTSI extends HarnessBinder({
 class WithArty200TUART(rxdPin: String = "A9", txdPin: String = "D10", uartNo: Int = 0) extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: UARTPort, chipId: Int) if port.uartNo == uartNo => {
     val ath = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[Arty200THarness]
-    val harnessIO = IO(chiselTypeOf(port.io)).suggestName("uart")
+    val harnessIO = IO(chiselTypeOf(port.io)).suggestName(s"uart${port.uartNo}")
     harnessIO <> port.io
     val packagePinsWithPackageIOs = Seq(
       (rxdPin, IOPin(harnessIO.rxd)),
