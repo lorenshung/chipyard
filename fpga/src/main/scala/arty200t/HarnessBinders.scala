@@ -52,7 +52,12 @@ class WithArty200TUARTTSI extends HarnessBinder({
 class WithArty200TUART(rxdPin: String = "A9", txdPin: String = "D10", uartNo: Int = 0) extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: UARTPort, chipId: Int) if port.uartNo == uartNo => {
     val ath = th.asInstanceOf[LazyRawModuleImp].wrapper.asInstanceOf[Arty200THarness]
-    val harnessIO = IO(chiselTypeOf(port.io)).suggestName("uart")
+    // One harness IO per UART, and the name has to be unique: a two-UART shell fires this
+    // binder once per uartNo, and both instances naming themselves "uart" is a fatal Chisel
+    // elaboration error. uart0 keeps the bare "uart" so every single-UART config's generated
+    // port names (and the XDC that references them) are unchanged.
+    val harnessIO = IO(chiselTypeOf(port.io))
+      .suggestName(if (uartNo == 0) "uart" else s"uart$uartNo")
     harnessIO <> port.io
     val packagePinsWithPackageIOs = Seq(
       (rxdPin, IOPin(harnessIO.rxd)),
