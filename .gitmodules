@@ -161,7 +161,15 @@
 	url = https://github.com/riscv-tacit/tacit_decoder.git
 [submodule "generators/tacit"]
 	path = generators/tacit
-	url = https://github.com/riscv-tacit/tacit.git
+	# CobbledSteel, not riscv-tacit: the trace-sink fixes the arty200t TACIT
+	# configs need are only published here. Two of them --
+	# "TraceSinkDMA: widen collect_counter to fit full beat + 4KB regnode"
+	# (the 256-byte regnode does not satisfy Saturn's PipelinedFaultCheck page
+	# alignment, and the narrow counter silently discards part of a 128-bit
+	# beat) and "Make the DSC branch predictor an elaboration option" -- are
+	# absent from every branch of riscv-tacit/tacit.
+	url = https://github.com/CobbledSteel/tacit.git
+	branch = optional-branch-predictor
 [submodule "generators/radiance"]
 	path = generators/radiance
 	url = https://github.com/ucb-bar/radiance.git
