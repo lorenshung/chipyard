@@ -49,7 +49,15 @@
 	url = https://github.com/ucb-bar/rocc-acc-utils.git
 [submodule "generators/rocket-chip"]
 	path = generators/rocket-chip
-	url = https://github.com/chipsalliance/rocket-chip.git
+	# CobbledSteel, not chipsalliance: this tree is pinned at ac3066c9,
+	# "FP-stripping: WithRocketFPU{32,16} + FP16-only Rocket FPU instantiation",
+	# which is one commit on upstream 8f1e33b25 and is published only here, as
+	# the tip of the xpurt branch. Every FP16 config needs it -- it is where
+	# WithRocketFPU16 is defined -- so with the URL pointing at chipsalliance a
+	# fresh clone could not resolve the pin and could not build the combined
+	# Gemmini + Saturn shell at all.
+	url = https://github.com/CobbledSteel/rocket-chip.git
+	branch = xpurt
 [submodule "generators/rocket-chip-blocks"]
 	path = generators/rocket-chip-blocks
 	url = https://github.com/chipsalliance/rocket-chip-blocks.git
