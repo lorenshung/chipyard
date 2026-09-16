@@ -61,16 +61,58 @@ report_clocks
 # occupancy the placer and router both leave slack on the table that physical
 # optimization recovers; skipping them understates achievable F_max.
 # ---------------------------------------------------------------------------
-puts "rb-impl: opt_design"
-opt_design
-puts "rb-impl: place_design"
-place_design
-puts "rb-impl: phys_opt_design (post-place)"
-phys_opt_design
-puts "rb-impl: route_design"
-route_design
-puts "rb-impl: phys_opt_design (post-route)"
-phys_opt_design
+# RB_IMPL_DIRECTIVE selects Vivado's implementation effort. Empty (the default)
+# runs every step on its default directive, which is what every recorded result
+# here was produced with -- so leaving it unset reproduces them.
+#
+# WHY IT EXISTS. A design can miss its constraint by a margin smaller than the
+# spread between directives: the Gemmini-16 shell routed at WNS -0.091 ns on the
+# defaults, 91 ps short of 40 MHz on a 25 ns period. That is not a design that
+# needs re-architecting, it is a design the placer gave up on early, and the
+# remedy is more effort rather than a slower clock or a smaller accelerator.
+#
+# Set RB_IMPL_DIRECTIVE=explore for the usual escalation. The directives differ
+# per command, so they are mapped rather than passed through verbatim.
+set rb_directive [rb_env RB_IMPL_DIRECTIVE ""]
+switch -- [string tolower $rb_directive] {
+    "" {
+        set rb_opt_dir    ""
+        set rb_place_dir  ""
+        set rb_phys_dir   ""
+        set rb_route_dir  ""
+    }
+    "explore" {
+        set rb_opt_dir    "-directive Explore"
+        set rb_place_dir  "-directive Explore"
+        set rb_phys_dir   "-directive Explore"
+        set rb_route_dir  "-directive Explore"
+    }
+    "aggressive" {
+        set rb_opt_dir    "-directive Explore"
+        set rb_place_dir  "-directive ExtraTimingOpt"
+        set rb_phys_dir   "-directive AggressiveExplore"
+        set rb_route_dir  "-directive AggressiveExplore"
+    }
+    default {
+        return -code error [list "unknown RB_IMPL_DIRECTIVE" $rb_directive \
+            "-- expected one of: (empty), explore, aggressive"]
+    }
+}
+if {$rb_directive ne ""} {
+    puts "rb-impl: directive '$rb_directive' -- NOT the default-effort flow the\
+          recorded numbers came from; record this alongside any result"
+}
+
+puts "rb-impl: opt_design $rb_opt_dir"
+eval opt_design $rb_opt_dir
+puts "rb-impl: place_design $rb_place_dir"
+eval place_design $rb_place_dir
+puts "rb-impl: phys_opt_design (post-place) $rb_phys_dir"
+eval phys_opt_design $rb_phys_dir
+puts "rb-impl: route_design $rb_route_dir"
+eval route_design $rb_route_dir
+puts "rb-impl: phys_opt_design (post-route) $rb_phys_dir"
+eval phys_opt_design $rb_phys_dir
 
 write_checkpoint -force [file join $rb_objdir rb_post_route.dcp]
 
