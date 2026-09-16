@@ -56,6 +56,13 @@ class WithArty200TUART(rxdPin: String = "A9", txdPin: String = "D10", uartNo: In
     // binder once per uartNo, and both instances naming themselves "uart" is a fatal Chisel
     // elaboration error. uart0 keeps the bare "uart" so every single-UART config's generated
     // port names (and the XDC that references them) are unchanged.
+    //
+    // ku040-codesign-cnn fixed the same duplicate-name bug independently, as
+    // suggestName(s"uart${port.uartNo}"). That is equivalent for every config in
+    // AccelConfigs.scala -- they all carry two UARTs, and uart1 gets the same name either
+    // way -- and differs only in renaming uart0 from "uart" to "uart0", which would churn
+    // the generated port names and XDC of every single-UART config. This side is kept for
+    // that reason.
     val harnessIO = IO(chiselTypeOf(port.io))
       .suggestName(if (uartNo == 0) "uart" else s"uart$uartNo")
     harnessIO <> port.io
