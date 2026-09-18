@@ -226,3 +226,69 @@ class RocketArty200TDroneGemminiSaturnFp16At35Config extends Config(
   new chipyard.harness.WithHarnessBinderClockFreqMHz(35) ++
   new chipyard.config.WithUniformBusFrequencies(35) ++
   new RocketArty200TDroneGemminiSaturnFp16Config)
+
+// ===========================================================================
+// INTEGER-ONLY combined target: 16x16 Gemmini + int-only Saturn V128D64 +
+// the FULL standard scalar FPU. The arty200t port of CnnNavMesh16KU040Config's
+// choice, and the shape an int8 CNN actually wants.
+//
+// WHY THIS EXISTS. RocketArty200TDroneGemminiSaturnFp16Config pairs an FP16
+// vector unit with an FP16-only scalar FPU, and for an int8 DroNet both halves
+// are dead weight that costs twice over:
+//
+//   - vxufp, Saturn's FP datapath, is silicon the workload never issues to. It
+//     measured 27,387 LUT at D128 on the KU040; at D64 call it half that, off a
+//     design sitting at 93.11%.
+//   - WithRocketFPU16 is what forces the whole image to CONFIG_FPU=n, because
+//     rocket-chip advertises "f" in riscv,isa for any FPU while that one
+//     implements only Zfh. CONFIG_FPU=n forces a soft-float ABI, and the
+//     soft-float ABI is what currently blocks the RVV kernels and leaves
+//     Saturn idle. An accelerator switched off by its own floating-point unit.
+//
+// intOnlyParams removes the first. Keeping the standard f16/f32/f64 FPU removes
+// the second: an ordinary hard-float image, so gemmini_q31_rvv builds unchanged
+// and Saturn runs the integer vector kernels it was put there for.
+//
+// The FPU is kept for the same reason CnnNavKU040Config keeps it, and that
+// reasoning is the airframe's rather than the model's: the flight controller is
+// fp32 and is the only safety-critical workload in this mix. WithRocketFPU16
+// cannot carry it -- Zfh without the F base is not a thing standard soft-float
+// can fall back to -- so a shell that wants to both fly and infer needs the real
+// FPU. It costs a measured +13,543 LUT on the KU040 against the FP16 unit.
+//
+// intOnlyParams also sets noFP, hence vfLen = 0 and vfh = false, so nothing here
+// asks for a scalar FP16 unit the way robotMpcParams does. The coupling
+// RocketArty200TDroneGemminiSaturnNoFpuConfig documents runs the other way: an
+// fp16 VECTOR needs a scalar fp16 FPU, an integer vector needs nothing.
+//
+// PROJECTION, NOT MEASUREMENT. The FP16 combined shell routes at 93.11% LUT /
+// 555 DSP / 244 BRAM. Dropping vxufp should take this well clear of that, and
+// the FPU swap adds some of it back. Whether the result closes faster than
+// 35 MHz is the open question -- `rb area run --board arty200t --config
+// RocketArty200TDroneGemminiSaturnIntConfig --attrs dsp` is what settles it.
+//
+// noPermute is carried over from the KU040 int-only points and is validated for
+// AREA only: it removes the vrgather / vcompress / vslide network, and a kernel
+// that lowers to a slide or gather will trap-illegal at run time. Check the
+// emitted kernels before flying anything.
+// ===========================================================================
+class RocketArty200TDroneGemminiSaturnIntConfig extends Config(
+  new WithArty200TDroneFullDmaUartBase ++
+  new saturn.rocket.WithRocketVectorUnit(128, 64,
+    saturn.common.VectorParams.intOnlyParams.copy(noPermute = true)) ++
+  new gemmini.Q31GemminiConfig(RbArty200TGemmini.mesh16) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+  new chipyard.config.AbstractConfig)
+
+/** The integer combined shell at 40 MHz, matching the Gemmini-only deploy target.
+ *
+ *  50 MHz is the default the shared base carries and no combined shell has ever
+ *  closed there. 40 is where RocketArty200TDroneGemmini16At40Config closes, so
+ *  running both at the same frequency makes the pair a clean A/B: identical
+ *  clock, identical periphery, Saturn the only variable.
+ */
+class RocketArty200TDroneGemminiSaturnIntAt40Config extends Config(
+  new chipyard.harness.WithHarnessBinderClockFreqMHz(40) ++
+  new chipyard.config.WithUniformBusFrequencies(40) ++
+  new RocketArty200TDroneGemminiSaturnIntConfig)
