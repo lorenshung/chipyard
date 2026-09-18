@@ -25,7 +25,7 @@
 	url = https://github.com/ucb-bar/FFTGenerator.git
 [submodule "generators/gemmini"]
 	path = generators/gemmini
-	url = https://github.com/ucb-bar/gemmini.git
+	url = git@github.com:CobbledSteel/gemmini.git
 [submodule "generators/hardfloat"]
 	path = generators/hardfloat
 	url = https://github.com/ucb-bar/berkeley-hardfloat.git
@@ -49,7 +49,7 @@
 	url = https://github.com/ucb-bar/rocc-acc-utils.git
 [submodule "generators/rocket-chip"]
 	path = generators/rocket-chip
-	url = https://github.com/chipsalliance/rocket-chip.git
+	url = git@github.com:CobbledSteel/rocket-chip.git
 [submodule "generators/rocket-chip-blocks"]
 	path = generators/rocket-chip-blocks
 	url = https://github.com/chipsalliance/rocket-chip-blocks.git
@@ -140,7 +140,7 @@
 	url = https://github.com/ucb-bar/compress-acc.git
 [submodule "generators/saturn"]
 	path = generators/saturn
-	url = https://github.com/ucb-bar/saturn-vectors.git
+	url = git@github.com:CobbledSteel/saturn-vectors.git
 [submodule "software/firesim-paper-workloads"]
 	path = software/firesim-paper-workloads
 	url = https://github.com/firesim/firesim-paper-workloads.git
@@ -161,7 +161,7 @@
 	url = https://github.com/riscv-tacit/tacit_decoder.git
 [submodule "generators/tacit"]
 	path = generators/tacit
-	url = https://github.com/riscv-tacit/tacit.git
+	url = git@github.com:CobbledSteel/tacit.git
 [submodule "generators/radiance"]
 	path = generators/radiance
 	url = https://github.com/ucb-bar/radiance.git
