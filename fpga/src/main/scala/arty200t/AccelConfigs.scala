@@ -292,3 +292,16 @@ class RocketArty200TDroneGemminiSaturnIntAt40Config extends Config(
   new chipyard.harness.WithHarnessBinderClockFreqMHz(40) ++
   new chipyard.config.WithUniformBusFrequencies(40) ++
   new RocketArty200TDroneGemminiSaturnIntConfig)
+
+/** The integer combined shell at 35 MHz: the fallback 4aeeae37 named.
+ *
+ *  GemminiSaturnIntAt40 routes at WNS -0.067 ns even with
+ *  RB_IMPL_DIRECTIVE=explore (reproduced 2026-09-23 from a fresh elaboration;
+ *  the 2026-09-17 build had already used explore). 35 MHz is the clock the FP16
+ *  combined shell closes at, so this pairs with
+ *  RocketArty200TDroneGemminiSaturnFp16At35Config at an identical clock.
+ */
+class RocketArty200TDroneGemminiSaturnIntAt35Config extends Config(
+  new chipyard.harness.WithHarnessBinderClockFreqMHz(35) ++
+  new chipyard.config.WithUniformBusFrequencies(35) ++
+  new RocketArty200TDroneGemminiSaturnIntConfig)
