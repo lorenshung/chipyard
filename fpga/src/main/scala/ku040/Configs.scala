@@ -62,10 +62,15 @@ class WithKU040ScratchpadMem(size: BigInt = BigInt(1) << 15) extends Config(
 // board's two DDR4 components are placed behind it when there is.
 class WithKU040Tweaks(freqMHz: Double = 50, uartRxdPin: String = "D3", ddr: Boolean = false,
                       ddrControllers: Int = 2,
-                      scratchpadBytes: BigInt = BigInt(1) << 15) extends Config(
-  new WithKU040UART(rxdPin = uartRxdPin) ++
+                      scratchpadBytes: BigInt = BigInt(1) << 15,
+                      uartTxdPin: String = "D4",
+                      ioStandard: String = "LVCMOS18",
+                      jtagTckPin: String = "E5", jtagTmsPin: String = "C6",
+                      jtagTdiPin: String = "D5", jtagTdoPin: String = "D6") extends Config(
+  new WithKU040UART(rxdPin = uartRxdPin, txdPin = uartTxdPin, ioStandard = ioStandard) ++
   new WithKU040UARTTSI ++
-  new WithKU040JTAG ++
+  new WithKU040JTAG(tckPin = jtagTckPin, tmsPin = jtagTmsPin,
+                    tdiPin = jtagTdiPin, tdoPin = jtagTdoPin, ioStandard = ioStandard) ++
   new WithNoDesignKey ++
   new testchipip.tsi.WithUARTTSIClient ++
   new chipyard.harness.WithSerialTLTiedOff ++
@@ -225,6 +230,214 @@ class RocketKU040DroneLogicDDRConfig extends Config(
   new WithKU040Tweaks(uartRxdPin = "C3", ddr = true) ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
+
+/** Clean minimal bring-up: Rocket + the board's 2 GiB of DDR4 + the riskybird sensor-array
+ *  periphery (I2C, SPI, GPIO, PWM x2, a second UART), no camera and no accelerator (no Gemmini,
+ *  no Saturn, no FcRoCC). Built to give those a real timing headroom on the bigger KU040 that
+ *  the congested Artix-200T lacks.
+ *
+ *  Peripheral set and addresses are ported from the arty200t "full sensor array" reference,
+ *  `RocketArty200TDroneFullDDRConfig` (fpga/src/main/scala/arty200t/Configs.scala):
+ *
+ *    i2c@0x10040000   BMI088 IMU / VL53L1X ToF / BMP388 / ADS7128 expander
+ *    spi@0x10031000   PMW3901 optical flow ("spi2" in the arty200t DTS numbering)
+ *    gpio@0x10010000  3-bit: PMW3901 CS, reset, LED_N (chipyard.config.WithRiskyBirdDronePeriphery)
+ *    pwm@0x10050000   motor block 0 (comparators 1-3)
+ *    pwm@0x10051000   motor block 1 (comparator 1) -- 4 motor channels total
+ *    uart0@0x10020000 console, on the PMOD D3/D4 pins (WithKU040Tweaks default)
+ *    uart1@0x10021000 ESP telemetry
+ *
+ *  Every one of these device fragments (WithI2C/WithSPI/WithGPIO/WithPWM/WithUART) wires its
+ *  interrupt into the PLIC automatically through rocket-chip's normal peripheral-bus interrupt
+ *  aggregation -- there is no separate manual PLIC step.
+ *
+ *  PACKAGE PINS. I2C is physically bound (WithKU040I2C, A1/A2 -- the same bank-68 header pins
+ *  used by JTAG/UART0/UART-TSI). SPI, GPIO and PWM follow RocketKU040DroneLogicConfig's own
+ *  precedent and are left logical-only: WithRiskyBirdDronePeriphery's doc comment is explicit
+ *  that "board harness binders must be added only after the connector-to-package mapping and
+ *  I/O voltage compatibility have been verified" for the PMW3901/motor connector, which is a
+ *  separate, not-yet-designed connector from the generic bank-68 bring-up header. Left unbound
+ *  they are safe to build: SPI/GPIO fall through to AbstractConfig's synthesizable
+ *  WithSPITiedOff/WithGPIOTiedOff, and PWM is never punched to ChipTop at all without an
+ *  explicit WithPWMPunchthrough (see that class's doc comment in
+ *  generators/chipyard/src/main/scala/iobinders/IOBinders.scala). uart1 is given the same
+ *  treatment via WithKU040UARTTiedOff, which is needed for a different reason: left unclaimed it
+ *  would otherwise fall through to AbstractConfig's WithUARTAdapter, a simulation-only DPI model
+ *  that is not synthesizable, rather than a config-safe default.
+ *
+ *  Zephyr note: no chipyard_riscv64-style KU040 board overlay exists yet for this address map,
+ *  and until the SPI/GPIO/PWM/uart1 package pins above are bound, no overlay could reach real
+ *  hardware regardless. The bitstream is what this configuration is for.
+ */
+class RocketKU040DroneSensorsConfig extends Config(
+  new WithKU040UARTTiedOff(uartNo = 1) ++
+  new chipyard.config.WithUART(address = 0x10021000) ++ // uart1: ESP telemetry (console uart0 stays 0x10020000)
+  new chipyard.config.WithRiskyBirdDronePeriphery ++     // spi2 + gpio(3) + pwm x2 -- logical only, see above
+  new WithKU040I2C ++
+  new chipyard.config.WithI2C ++                         // i2c@0x10040000, physically bound to A1/A2
+  // riskybirdv3 carrier: the debug FTDI reaches the RISC-V JTAG + console UART on JB1 =
+  // VCCIOA = XCKU040 Bank 64, which is the HR (3.3V-capable) bank per Trenz's 4x5 SoM
+  // Integration Guide -- NOT Loren's bank-68 (E5/C6/D5/D6, D3/D4) carrier default. Balls
+  // from the riskybird B2B pinout (hermaphroditic swap): TCK=AA10 TMS=Y12 TDI=Y10 TDO=Y11,
+  // uart0 rxd=AH12 txd=AG12, all LVCMOS33 (VCCIOA fed +3V3 on JB1.10/12).
+  new WithKU040Tweaks(ddr = true,                        // both DDR4 controllers, 2 GiB
+    uartRxdPin = "AH12", uartTxdPin = "AG12", ioStandard = "LVCMOS33",
+    jtagTckPin = "AA10", jtagTmsPin = "Y12", jtagTdiPin = "Y10", jtagTdoPin = "Y11") ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
+/** Full riskybird v3 drone SoC on the KU040, with EVERY peripheral placed on the riskybird v3
+ *  carrier's TE0841 balls (not Loren's KU040 carrier defaults):
+ *    - console uart0 + debug jtag on Bank 64 (HR/3.3V) -- bench-verified
+ *    - i2c sensor bus on Bank 64 balls AA12/AB12 (IMU/ToF/baro/ADS7128 + the HM01B0 SCCB, which is
+ *      level-shifted onto this same bus by an on-carrier PCA9306, so no separate camera-i2c ball)
+ *    - PMW3901 optical-flow SPI (AC9/AD9/AH14) + its GPIO CS/reset/LED (AH13/AB10/AG10), Bank 64
+ *    - 4 motor PWM outputs (AH8/AB9/AF23/AB15; motor3 is Bank 65, the rest Bank 64 -- both HR/3.3V),
+ *      inverted so they are OFF at power-on
+ *    - HM01B0 camera OSPI parallel video on Bank 66 (HP, 1.8V, LVCMOS18) -- VCCIOB is wired to the
+ *      carrier +1V8 rail, matching the HM01B0's 1.8V IOVDD
+ *  All balls cross-validated (KiCAD netlist + Trenz B2B tables + the Trenz 4x5 SoM Integration Guide
+ *  bank table) against the working arty200t drone config. Mirrors RocketArty200TDroneFullDDRConfig's
+ *  device + punchthrough recipe; 2 GiB DDR4 backing.
+ */
+class RocketKU040DroneFullConfig extends Config(
+  new WithKU040UARTTiedOff(uartNo = 1) ++                 // ESP telem uart1: no carrier balls traced yet
+  new chipyard.config.WithUART(address = 0x10021000) ++  // uart1 device (console uart0 stays 0x10020000)
+  new WithKU040PWM ++                                     // 4 motors on Bank 64/65 balls (inverted -> off at reset)
+  new chipyard.iobinders.WithPWMPunchthrough ++
+  new WithKU040SPI ++                                     // PMW3901 flow SPI, Bank 64
+  new WithKU040GPIO ++                                    // flow CS/reset/LED, Bank 64
+  new chipyard.config.WithRiskyBirdDronePeriphery ++     // SoC devices: spi2 + gpio(3) + pwm x2
+  new WithKU040Ospi(                                      // HM01B0 camera parallel video, Bank 66 / LVCMOS18
+    dataPins = Seq("N7", "M5", "L5", "J1", "H1", "J4", "J5", "M7"),
+    pclkPin = "L8", fvldPin = "L1", lvldPin = "K2", intrPin = "K1", mclkPin = "N8", trigPin = "M1") ++
+  new chipyard.iobinders.WithOspiPunchthrough ++
+  new ospi.WithOspiCapture ++
+  new WithKU040I2C(sclPin = "AA12", sdaPin = "AB12", ioStandard = "LVCMOS33") ++  // Bank 64 sensor + SCCB bus
+  new chipyard.config.WithI2C ++                          // i2c@0x10040000
+  new WithKU040Tweaks(ddr = true,                        // 2 GiB DDR4; uart0 + jtag on Bank 64 (riskybird carrier)
+    uartRxdPin = "AH12", uartTxdPin = "AG12", ioStandard = "LVCMOS33",
+    jtagTckPin = "AA10", jtagTmsPin = "Y12", jtagTdiPin = "Y10", jtagTdoPin = "Y11") ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
+/** Per-tile FP32-only scalar FPU (minFLen=fLen=32: single precision F, no double D).
+ *  Scoped by tileId via TileAttachConfig.atTileIds so it can target one core in a
+ *  multi-tile design. Must be composed to the LEFT of saturn.WithRocketVectorUnit,
+ *  which otherwise force-sets minFLen=16 on its tile and would win. */
+class WithFP32OnlyFPUOnTiles(ids: Int*) extends Config(
+  new freechips.rocketchip.subsystem.TileAttachConfig[freechips.rocketchip.subsystem.RocketTileAttachParams](
+    tp => tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(
+      fpu = tp.tileParams.core.fpu.map(_.copy(minFLen = 32, fLen = 32)))))
+  ).atTileIds(ids: _*))
+
+/** "More powerful" heterogeneous DUAL-CORE riskybird v3 drone SoC on the KU040:
+ *
+ *   - hart 0 ("Saturn core"): Rocket + Saturn V128D128 RVV vector unit (INTEGER-ONLY) +
+ *     the FcRoCC flight-controller accelerator (RoCC custom0). Keeps a hardware scalar
+ *     FPU restricted to FP32-only (no FP64).
+ *   - hart 1 ("Gemmini core"): Rocket + Q0.31 32x32 Gemmini (RoCC custom3). No Saturn/FcRoCC.
+ *   - TACIT instruction-trace encoder + DDR trace sink, with TACIT's OWN internal DSC branch
+ *     predictor OFF (useBP=false, the default -- saves ~3,045 LUT + 2,048 FF per encoder).
+ *     Rocket's own BTB/BHT/RAS are left ENABLED at spec default.
+ *   - All riskybird carrier peripherals on the correct TE0841 balls (i2c/spi/gpio/pwm Bank64/65
+ *     LVCMOS33, HM01B0 camera Bank66 LVCMOS18) + console uart0/debug jtag on Bank64, same as
+ *     RocketKU040DroneFullConfig.
+ *   - DDR4: 1 controller (1 GiB) -- fit-conscious for this accel-heavy dual-core design.
+ *
+ *  FP32-only is applied to BOTH tiles: neither core needs FP64 (the Gemmini core runs int8
+ *  dispatch), and dropping FP64 saves LUTs on this tight design. Change to (0) to keep hart 1's
+ *  default FP64 FPU.
+ *
+ *  BUILD (applies the same use_dsp DSP-packing + BRAM opts as the prior accel bitstreams):
+ *    make -C fpga SUB_PROJECT=ku040 CONFIG=RocketKU040DroneDualConfig RB_ATTRS=dsp rb-area
+ *    make -C fpga SUB_PROJECT=ku040 CONFIG=RocketKU040DroneDualConfig RB_ATTRS=dsp rb-impl
+ *
+ *  FIT is the #1 risk (first multi-core ku040 config; 32x32 Gemmini alone is ~129k LUT under
+ *  use_dsp). Fallbacks if rb-area overruns: 16x16 Gemmini, drop TACIT to hart 0 only, or drop DDR.
+ */
+class RocketKU040DroneDualConfig extends Config(
+  // ---- riskybird carrier peripherals + pins (same as RocketKU040DroneFullConfig) ----
+  new WithKU040UARTTiedOff(uartNo = 1) ++
+  new chipyard.config.WithUART(address = 0x10021000) ++
+  new WithKU040PWM ++
+  new chipyard.iobinders.WithPWMPunchthrough ++
+  new WithKU040SPI ++
+  new WithKU040GPIO ++
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithKU040Ospi(
+    dataPins = Seq("N7", "M5", "L5", "J1", "H1", "J4", "J5", "M7"),
+    pclkPin = "L8", fvldPin = "L1", lvldPin = "K2", intrPin = "K1", mclkPin = "N8", trigPin = "M1") ++
+  new chipyard.iobinders.WithOspiPunchthrough ++
+  new ospi.WithOspiCapture ++
+  new WithKU040I2C(sclPin = "AA12", sdaPin = "AB12", ioStandard = "LVCMOS33") ++
+  new chipyard.config.WithI2C ++
+  // ---- DDR + clocking + console uart0/debug jtag on Bank 64 (riskybird carrier) ----
+  new WithKU040Tweaks(ddr = true, ddrControllers = 1,
+    uartRxdPin = "AH12", uartTxdPin = "AG12", ioStandard = "LVCMOS33",
+    jtagTckPin = "AA10", jtagTmsPin = "Y12", jtagTdiPin = "Y10", jtagTdoPin = "Y11") ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  // ---- TACIT trace (both tiles); encoder rightmost of the group; internal DSC BP OFF ----
+  new tacit.WithTraceSinkDMA(1) ++
+  new tacit.WithTraceSinkAlways(0) ++
+  new chipyard.config.WithTraceArbiterMonitor ++
+  new chipyard.WithTacitEncoder(useBP = false) ++
+  // ---- FP32-only scalar FPU on both tiles (LEFT of Saturn so it wins over minFLen=16) ----
+  new WithFP32OnlyFPUOnTiles(0, 1) ++
+  // ---- per-hart RoCC: FcRoCC (custom0) -> hart 0, Gemmini 32x32 (custom3) -> hart 1 ----
+  new chipyard.config.WithMultiRoCC ++
+  new chipyard.config.WithMultiRoCCFromBuildRoCC(0) ++
+  new chipyard.fc.WithFcRoCC ++
+  new chipyard.config.WithMultiRoCCFromBuildRoCC(1) ++
+  new gemmini.Q31Ws32x32AccGemminiConfig ++
+  // ---- Saturn V128D128 integer-only vector unit -> hart 0 only ----
+  new saturn.rocket.WithRocketVectorUnit(128, 128, saturn.common.VectorParams.intOnlyParams,
+    cores = Some(Seq(0))) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(2) ++   // tile0=hart0 (Saturn+Fc), tile1=hart1 (Gemmini)
+  new chipyard.config.AbstractConfig)
+
+/** 16x16-Gemmini FALLBACK of RocketKU040DroneDualConfig. Identical in every other respect, but
+ *  swaps the 32x32 Gemmini (~129k LUT, congestion-5 at synth) for the proven 16x16 DroNet mesh
+ *  (RbArty200TGemmini.mesh16 -- the exact Gemmini the flown At35 22fps DroNet used: 16x16, 64KB
+ *  acc, has_loop_conv, no mvin-scale). Big LUT + routing-congestion relief; run in parallel with
+ *  the 32x32 rb-impl so we have a routable/timing-closing bitstream if the 32x32 doesn't fit.
+ *  Build: make -C fpga SUB_PROJECT=ku040 CONFIG=RocketKU040DroneDual16Config RB_ATTRS=dsp rb-area && ... rb-impl
+ */
+class RocketKU040DroneDual16Config extends Config(
+  new WithKU040UARTTiedOff(uartNo = 1) ++
+  new chipyard.config.WithUART(address = 0x10021000) ++
+  new WithKU040PWM ++
+  new chipyard.iobinders.WithPWMPunchthrough ++
+  new WithKU040SPI ++
+  new WithKU040GPIO ++
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithKU040Ospi(
+    dataPins = Seq("N7", "M5", "L5", "J1", "H1", "J4", "J5", "M7"),
+    pclkPin = "L8", fvldPin = "L1", lvldPin = "K2", intrPin = "K1", mclkPin = "N8", trigPin = "M1") ++
+  new chipyard.iobinders.WithOspiPunchthrough ++
+  new ospi.WithOspiCapture ++
+  new WithKU040I2C(sclPin = "AA12", sdaPin = "AB12", ioStandard = "LVCMOS33") ++
+  new chipyard.config.WithI2C ++
+  new WithKU040Tweaks(ddr = true, ddrControllers = 1,
+    uartRxdPin = "AH12", uartTxdPin = "AG12", ioStandard = "LVCMOS33",
+    jtagTckPin = "AA10", jtagTmsPin = "Y12", jtagTdiPin = "Y10", jtagTdoPin = "Y11") ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new tacit.WithTraceSinkDMA(1) ++
+  new tacit.WithTraceSinkAlways(0) ++
+  new chipyard.config.WithTraceArbiterMonitor ++
+  new chipyard.WithTacitEncoder(useBP = false) ++
+  new WithFP32OnlyFPUOnTiles(0, 1) ++
+  new chipyard.config.WithMultiRoCC ++
+  new chipyard.config.WithMultiRoCCFromBuildRoCC(0) ++
+  new chipyard.fc.WithFcRoCC ++
+  new chipyard.config.WithMultiRoCCFromBuildRoCC(1) ++
+  new gemmini.Q31GemminiConfig(chipyard.fpga.arty200t.RbArty200TGemmini.mesh16) ++  // 16x16 fallback
+  new saturn.rocket.WithRocketVectorUnit(128, 128, saturn.common.VectorParams.intOnlyParams,
+    cores = Some(Seq(0))) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(2) ++
+  new chipyard.config.AbstractConfig)
 
 class SaturnKU040Config extends Config(
   new WithKU040Tweaks(ddr = true) ++
@@ -854,3 +1067,155 @@ class NoCoresKU040Config extends Config(
   new WithKU040Tweaks ++
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.NoCoresConfig)
+
+/** FP16-Saturn variant of RocketKU040DroneDualConfig, so the DroNet int8/fp16 HYBRID
+ *  can run its final layer (relu/linear/bn/add _f16 tail) on the vector unit.
+ *
+ *  Deltas vs RocketKU040DroneDualConfig (everything else byte-identical):
+ *   - hart0 Saturn: intOnlyParams -> robotMpcParams (noFP64/noFP32, keeps FP16 vector FMA).
+ *   - scalar FPU: FP32-only applied to hart1 ONLY; hart0 gets WithRocketFPU16 (minFLen=16),
+ *     which ADDS the FP16 scalar FMA (~489 LUT) while KEEPING fp32 for the FcRoCC MPC path.
+ *   - hart1 (Gemmini int8 core) unchanged: FP32-only scalar, no Saturn.
+ *
+ *  AREA RISK is the whole point of building this: intOnly dual already fights FIT (32x32
+ *  Gemmini ~129k LUT; single-core FP16 Saturn+Gemmini was 177k LUT / 73%). Adding the FP16
+ *  vector datapath to the dual is tighter still -- run rb-area FIRST; fall back to
+ *  RocketKU040DroneDual16 (16x16 Gemmini) if it overruns.
+ *
+ *  BUILD:
+ *    make -C fpga SUB_PROJECT=ku040 CONFIG=RocketKU040DroneDualFp16Config RB_ATTRS=dsp rb-area
+ *    make -C fpga SUB_PROJECT=ku040 CONFIG=RocketKU040DroneDualFp16Config RB_ATTRS=dsp rb-impl
+ */
+class RocketKU040DroneDualFp16Config extends Config(
+  // ---- riskybird carrier peripherals + pins (same as RocketKU040DroneDualConfig) ----
+  new WithKU040UARTTiedOff(uartNo = 1) ++
+  new chipyard.config.WithUART(address = 0x10021000) ++
+  new WithKU040PWM ++
+  new chipyard.iobinders.WithPWMPunchthrough ++
+  new WithKU040SPI ++
+  new WithKU040GPIO ++
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithKU040Ospi(
+    dataPins = Seq("N7", "M5", "L5", "J1", "H1", "J4", "J5", "M7"),
+    pclkPin = "L8", fvldPin = "L1", lvldPin = "K2", intrPin = "K1", mclkPin = "N8", trigPin = "M1") ++
+  new chipyard.iobinders.WithOspiPunchthrough ++
+  new ospi.WithOspiCapture ++
+  new WithKU040I2C(sclPin = "AA12", sdaPin = "AB12", ioStandard = "LVCMOS33") ++
+  new chipyard.config.WithI2C ++
+  // ---- DDR + clocking + console uart0/debug jtag on Bank 64 (riskybird carrier) ----
+  new WithKU040Tweaks(ddr = true, ddrControllers = 1,
+    uartRxdPin = "AH12", uartTxdPin = "AG12", ioStandard = "LVCMOS33",
+    jtagTckPin = "AA10", jtagTmsPin = "Y12", jtagTdiPin = "Y10", jtagTdoPin = "Y11") ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  // ---- TACIT trace (both tiles); encoder rightmost of the group; internal DSC BP OFF ----
+  new tacit.WithTraceSinkDMA(1) ++
+  new tacit.WithTraceSinkAlways(0) ++
+  new chipyard.config.WithTraceArbiterMonitor ++
+  new chipyard.WithTacitEncoder(useBP = false) ++
+  // ---- scalar FPU: hart1 FP32-only (LEFT so it wins); hart0 gets FP16 (minFLen=16) + keeps fp32 ----
+  new WithFP32OnlyFPUOnTiles(1) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  // ---- per-hart RoCC: FcRoCC (custom0) -> hart 0, Gemmini 32x32 (custom3) -> hart 1 ----
+  new chipyard.config.WithMultiRoCC ++
+  new chipyard.config.WithMultiRoCCFromBuildRoCC(0) ++
+  new chipyard.fc.WithFcRoCC ++
+  new chipyard.config.WithMultiRoCCFromBuildRoCC(1) ++
+  new gemmini.Q31Ws32x32AccGemminiConfig ++
+  // ---- Saturn V128D128 FP16 vector unit (robotMpc) -> hart 0 only ----
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(useElementwiseFP64 = true),
+    cores = Some(Seq(0))) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(2) ++   // tile0=hart0 (Saturn+Fc), tile1=hart1 (Gemmini)
+  new chipyard.config.AbstractConfig)
+
+/** 16x16-Gemmini + FP16-Saturn dual config: the DEPLOYABLE-FIT variant of
+ *  RocketKU040DroneDualFp16Config. The 32x32-Gemmini FP16 dual synthesized at 99.86%
+ *  CLB LUTs (unroutable); swapping to the proven 16x16 DroNet mesh frees ~70k LUT,
+ *  leaving room for the FP16 vector datapath. FP16 deltas identical to the 32x32 variant.
+ *  NOTE: 16x16 = Gemmini DIM=16 -> the modelblaster model MUST be generated with the
+ *  DIM=16 gemmini params (NOT the DIM=32 header), or the DIM-mismatch garbage bug returns.
+ *  BUILD: make -C fpga SUB_PROJECT=ku040 CONFIG=RocketKU040DroneDual16Fp16Config RB_ATTRS=dsp rb-area
+ */
+class RocketKU040DroneDual16Fp16Config extends Config(
+  new WithKU040UARTTiedOff(uartNo = 1) ++
+  new chipyard.config.WithUART(address = 0x10021000) ++
+  new WithKU040PWM ++
+  new chipyard.iobinders.WithPWMPunchthrough ++
+  new WithKU040SPI ++
+  new WithKU040GPIO ++
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithKU040Ospi(
+    dataPins = Seq("N7", "M5", "L5", "J1", "H1", "J4", "J5", "M7"),
+    pclkPin = "L8", fvldPin = "L1", lvldPin = "K2", intrPin = "K1", mclkPin = "N8", trigPin = "M1") ++
+  new chipyard.iobinders.WithOspiPunchthrough ++
+  new ospi.WithOspiCapture ++
+  new WithKU040I2C(sclPin = "AA12", sdaPin = "AB12", ioStandard = "LVCMOS33") ++
+  new chipyard.config.WithI2C ++
+  new WithKU040Tweaks(ddr = true, ddrControllers = 1,
+    uartRxdPin = "AH12", uartTxdPin = "AG12", ioStandard = "LVCMOS33",
+    jtagTckPin = "AA10", jtagTmsPin = "Y12", jtagTdiPin = "Y10", jtagTdoPin = "Y11") ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new tacit.WithTraceSinkDMA(1) ++
+  new tacit.WithTraceSinkAlways(0) ++
+  new chipyard.config.WithTraceArbiterMonitor ++
+  new chipyard.WithTacitEncoder(useBP = false) ++
+  new WithFP32OnlyFPUOnTiles(1) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new chipyard.config.WithMultiRoCC ++
+  new chipyard.config.WithMultiRoCCFromBuildRoCC(0) ++
+  new chipyard.fc.WithFcRoCC ++
+  new chipyard.config.WithMultiRoCCFromBuildRoCC(1) ++
+  new gemmini.Q31GemminiConfig(chipyard.fpga.arty200t.RbArty200TGemmini.mesh16) ++  // 16x16
+  new saturn.rocket.WithRocketVectorUnit(128, 128,
+    saturn.common.VectorParams.robotMpcParams.copy(useElementwiseFP64 = true),
+    cores = Some(Seq(0))) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(2) ++
+  new chipyard.config.AbstractConfig)
+
+/** 32x32 int Gemmini + SMALLER FP16 Saturn (DLEN=64) dual config. The D128 FP16 Saturn
+ *  blew area (99.86% LUT, unroutable); halving the physical vector datapath (DLEN 128->64,
+ *  VLEN stays 128 so the rvv_f16 kernels are byte-identical) shrinks the FP16 datapath while
+ *  KEEPING the 32x32 Gemmini throughput. The int8 DroNet RVV ops (bn/add/pool) run ~2x
+ *  narrower but they are a small fraction of runtime (convs dominate on Gemmini); the fp16
+ *  tail (relu_f16+linear_f16, 2048 MACs) is trivial at any width. Precedent: MinSaturnRobotMpc
+ *  sim configs use WithRocketVectorUnit(128, 64, robotMpcParams).
+ *  BUILD: make -C fpga SUB_PROJECT=ku040 CONFIG=RocketKU040DroneDualFp16D64Config RB_ATTRS=dsp rb-area
+ */
+class RocketKU040DroneDualFp16D64Config extends Config(
+  new WithKU040UARTTiedOff(uartNo = 1) ++
+  new chipyard.config.WithUART(address = 0x10021000) ++
+  new WithKU040PWM ++
+  new chipyard.iobinders.WithPWMPunchthrough ++
+  new WithKU040SPI ++
+  new WithKU040GPIO ++
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithKU040Ospi(
+    dataPins = Seq("N7", "M5", "L5", "J1", "H1", "J4", "J5", "M7"),
+    pclkPin = "L8", fvldPin = "L1", lvldPin = "K2", intrPin = "K1", mclkPin = "N8", trigPin = "M1") ++
+  new chipyard.iobinders.WithOspiPunchthrough ++
+  new ospi.WithOspiCapture ++
+  new WithKU040I2C(sclPin = "AA12", sdaPin = "AB12", ioStandard = "LVCMOS33") ++
+  new chipyard.config.WithI2C ++
+  new WithKU040Tweaks(ddr = true, ddrControllers = 1,
+    uartRxdPin = "AH12", uartTxdPin = "AG12", ioStandard = "LVCMOS33",
+    jtagTckPin = "AA10", jtagTmsPin = "Y12", jtagTdiPin = "Y10", jtagTdoPin = "Y11") ++
+  new chipyard.config.WithBroadcastManager ++
+  new tacit.WithTraceSinkDMA(1) ++
+  new tacit.WithTraceSinkAlways(0) ++
+  new chipyard.config.WithTraceArbiterMonitor ++
+  new chipyard.WithTacitEncoder(useBP = false) ++
+  new WithFP32OnlyFPUOnTiles(1) ++
+  new freechips.rocketchip.rocket.WithRocketFPU16 ++
+  new chipyard.config.WithMultiRoCC ++
+  new chipyard.config.WithMultiRoCCFromBuildRoCC(0) ++
+  new chipyard.fc.WithFcRoCC ++
+  new chipyard.config.WithMultiRoCCFromBuildRoCC(1) ++
+  new gemmini.Q31Ws32x32AccGemminiConfig ++
+  new saturn.rocket.WithRocketVectorUnit(128, 64,
+    saturn.common.VectorParams.robotMpcParams.copy(useElementwiseFP64 = true),
+    cores = Some(Seq(0))) ++
+  new chipyard.config.WithSystemBusWidth(128) ++
+  new freechips.rocketchip.rocket.WithNHugeCores(2) ++
+  new chipyard.config.AbstractConfig)
