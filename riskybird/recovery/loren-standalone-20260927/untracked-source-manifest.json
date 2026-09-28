@@ -1,0 +1,17 @@
+{
+  "source": "/scratch2/loren/chipyard",
+  "head": "63c1506826fc70a8f24065237aa65130b4830ee1",
+  "files": {
+    "generators/nvfp4/chipyard/NVFP4Configs.scala": "af5fba161bb483856a018e781c91d5d9c32dd238e16c999402dbe04fd58bfaf6",
+    "generators/nvfp4/src/main/scala/nvfp4/BlockDot.scala": "2b66873b1c1dea09185b5c9c9890f71f74a2fcc69b01faa006c58094fa07a3dc",
+    "generators/nvfp4/src/main/scala/nvfp4/Codec.scala": "13653abff8bdcf73cfd10e10582279053938115217d86de426b786269c91c042",
+    "generators/nvfp4/src/main/scala/nvfp4/NVFP4Accel.scala": "29e77cf2a34e04ccabd0513c423854a6775593b368babe487e5a28c234f4fc3d",
+    "generators/nvfp4/src/main/scala/nvfp4/ScaleAlign.scala": "6c7fedc54b9a719905ee82cc5c32cf94ce3c39ffa609dfb2253b351a859d7a1c",
+    "generators/nvfp4/src/test/scala/nvfp4/CodecSpec.scala": "6d22ec3d86176b1d397e1115c3def421e1bd37805e8c4c8c244a6f8663e6eff0",
+    "generators/nvfp4/src/test/scala/nvfp4/PESpec.scala": "f34ddff2eec920a8cf35cd87202125d495b4c606c0a68bc26ab033b9e67fdd4f",
+    "tests/nvfp4.h": "ce6697a415bff943d755a824fb25e29b6a245c0528bae97418b20e4aa5d1562d",
+    "tests/nvfp4_gemm.c": "b6cc8643b6aa2734d39c281a519b8ff8c23b2cec151897e5ee81bbeedb716a6f",
+    "tests/nvfp4_layer.c": "c86ad8977f28a7b1d02fa112efaeb0c9da9ca692dd188fbe908c6e3029939711",
+    "tests/nvfp4_layer_data.h": "bdcfc55283f5f249ce92a634678c55bd4da81fa27939b69d193fe2f512234e01"
+  }
+}
