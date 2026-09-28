@@ -8,7 +8,7 @@ import freechips.rocketchip.subsystem.{PeripheryBusKey}
 import freechips.rocketchip.tilelink.{TLBundle}
 import freechips.rocketchip.diplomacy.{LazyRawModuleImp}
 import org.chipsalliance.diplomacy.nodes.{HeterogeneousBag}
-import sifive.blocks.devices.uart.{UARTPortIO, UARTParams}
+import sifive.blocks.devices.uart.{UART, UARTPortIO, UARTParams}
 import sifive.fpgashells.shell._
 import sifive.fpgashells.ip.xilinx._
 import sifive.fpgashells.shell.xilinx._
@@ -83,8 +83,7 @@ class WithKU040UART(rxdPin: String = "D3", txdPin: String = "D4", uartNo: Int = 
 // idle-high: DontCare lowers to zero with the supported firtool, asserting a permanent break.
 class WithKU040UARTTiedOff(uartNo: Int) extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: UARTPort, chipId: Int) if port.uartNo == uartNo => {
-    port.io.rxd := true.B
-    port.io.cts_n.foreach(_ := true.B) // no attached peer is ready to receive
+    UART.tieoff(port.io)
   }
 })
 
