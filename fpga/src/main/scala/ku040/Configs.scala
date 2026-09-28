@@ -1073,8 +1073,9 @@ class NoCoresKU040Config extends Config(
  *
  *  Deltas vs RocketKU040DroneDualConfig (everything else byte-identical):
  *   - hart0 Saturn: intOnlyParams -> robotMpcParams (noFP64/noFP32, keeps FP16 vector FMA).
- *   - scalar FPU: FP32-only applied to hart1 ONLY; hart0 gets WithRocketFPU16 (minFLen=16),
- *     which ADDS the FP16 scalar FMA (~489 LUT) while KEEPING fp32 for the FcRoCC MPC path.
+ *   - scalar FPU: FP32-only applied to hart1 ONLY; hart0 gets WithRocketFPU16
+ *     (minFLen=16, fLen=16 at the selected Rocket pin), so it cannot execute scalar FP32.
+ *     FcRoCC is a separate custom accelerator; its presence does not restore scalar FP32.
  *   - hart1 (Gemmini int8 core) unchanged: FP32-only scalar, no Saturn.
  *
  *  AREA RISK is the whole point of building this: intOnly dual already fights FIT (32x32
@@ -1112,7 +1113,7 @@ class RocketKU040DroneDualFp16Config extends Config(
   new tacit.WithTraceSinkAlways(0) ++
   new chipyard.config.WithTraceArbiterMonitor ++
   new chipyard.WithTacitEncoder(useBP = false) ++
-  // ---- scalar FPU: hart1 FP32-only (LEFT so it wins); hart0 gets FP16 (minFLen=16) + keeps fp32 ----
+  // ---- scalar FPU: hart1 FP32-only (LEFT so it wins); hart0 scalar FP16-only ----
   new WithFP32OnlyFPUOnTiles(1) ++
   new freechips.rocketchip.rocket.WithRocketFPU16 ++
   // ---- per-hart RoCC: FcRoCC (custom0) -> hart 0, Gemmini 32x32 (custom3) -> hart 1 ----

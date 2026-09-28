@@ -79,12 +79,12 @@ class WithKU040UART(rxdPin: String = "D3", txdPin: String = "D4", uartNo: Int = 
 // Ties off a UART device that has no package-pin mapping yet (e.g. a second UART added for
 // ESP telemetry, ahead of a verified carrier pinout). Without this, an unclaimed UARTPort falls
 // through to AbstractConfig's default `WithUARTAdapter` HarnessBinder, which instantiates a
-// simulation-only DPI UART model -- not synthesizable for a real FPGA build. `port.io <> DontCare`
-// mirrors WithI2CTiedOff's synthesizable tie-off pattern (harness/HarnessBinders.scala) rather
-// than reaching for the sim-only adapter.
+// simulation-only DPI UART model -- not synthesizable for a real FPGA build. Hold RX at
+// idle-high: DontCare lowers to zero with the supported firtool, asserting a permanent break.
 class WithKU040UARTTiedOff(uartNo: Int) extends HarnessBinder({
   case (th: HasHarnessInstantiators, port: UARTPort, chipId: Int) if port.uartNo == uartNo => {
-    port.io <> DontCare
+    port.io.rxd := true.B
+    port.io.cts_n.foreach(_ := true.B) // no attached peer is ready to receive
   }
 })
 
