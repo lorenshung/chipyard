@@ -368,6 +368,58 @@ class RocketArty200TDroneFullDDRConfig extends Config(
   new chipyard.config.WithBroadcastManager ++ // no l2
   new chipyard.RocketConfig)
 
+/** RocketArty200TDroneFullDDRConfig plus remote program loading through the ESP32.
+ *
+ *  The same SoC, with one change at the ESP pins: instead of uart1 owning E13/F14
+ *  outright, WithArty200TEspLinkLoader shares them between uart1 and a UART-TSI
+ *  client, switched by hardware on a break + key from the ESP (see
+ *  EspLinkLoader.scala). In normal operation uart1 behaves exactly as in the
+ *  FullDDR shell; on request the ESP can reset the SoC and write a new ELF into
+ *  DDR with `rb load`, so programs can go in over WiFi instead of over JTAG.
+ *
+ *  uartTsi = false on the tweaks keeps the Arty-pinned P16/U18 TSI binder out;
+ *  the client is added here instead and bound to the shared pins. The TSI UART
+ *  is not a TLUART, so the memory map, PLIC sources and Zephyr overlays are
+ *  those of RocketArty200TDroneFullDDRConfig.
+ *
+ *  The loader's reset is a SoC-only reset, which the FullDDR periphery was not built
+ *  for: the PWM comparators keep their values across it (so the harness inhibits the
+ *  motor pins until each PWM output reads "off" again), and the DDR adapters keep
+ *  their state (so the harness fences the memory port at a burst boundary first).
+ */
+class RocketArty200TDroneFullDDRLoaderConfig extends Config(
+  // ESP pins: uart1 + UART-TSI. Also binds the motor pins (WithArty200TEspLinkPWM,
+  // WithArty200TPWM's mapping plus an inhibit armed by the loader's reset) and the
+  // DDR port (fenced), so WithArty200TPWM is deliberately absent here.
+  new WithArty200TEspLinkLoader("E13", "F14", uartNo = 1) ++
+  new testchipip.tsi.WithUARTTSIClient ++
+  new chipyard.config.WithUART(address = 0x10021000) ++   // add uart1 (console uart0 stays 0x10020000)
+  new chipyard.iobinders.WithPWMPunchthrough ++
+  new WithArty200TSPI ++
+  new WithArty200TGPIO ++
+  new chipyard.config.WithRiskyBirdDronePeriphery ++
+  new WithArty200TOspiPeriphery ++
+  new WithArty200TTweaks(ddr = true, uartTsi = false) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
+/** The ESP loader on the motor-free drone shell: RocketArty200TDroneDDRConfig plus uart1 and
+ *  WithArty200TEspLinkLoader on E13/F14.
+ *
+ *  For proving the loader on the bench without a motor-capable image. Like DroneDDR it has no
+ *  PWM blocks and constrains none of the four motor pins (E22/B20/R17/F13), so they are left
+ *  to the bitstream's unused-pin pulldown -- whereas loading the FullDDR shell has spun motors
+ *  before (2026-09-04, cause unknown). Same Rocket, DDR3 and JTAG as DroneDDR, so programs
+ *  built for RocketArty200TDroneDDRConfig run here; uart1 at 0x10021000 is the only addition.
+ */
+class RocketArty200TDroneDDRLoaderConfig extends Config(
+  new WithArty200TEspLinkLoader("E13", "F14", uartNo = 1) ++  // ESP pins: uart1 + UART-TSI
+  new testchipip.tsi.WithUARTTSIClient ++
+  new chipyard.config.WithUART(address = 0x10021000) ++   // add uart1 (console uart0 stays 0x10020000)
+  new WithArty200TTweaks(uartTsi = false) ++
+  new chipyard.config.WithBroadcastManager ++ // no l2
+  new chipyard.RocketConfig)
+
 /** OSPI periphery with the DMA-capable capture peripheral (adds a TileLink master to DDR).
  *  Byte-for-byte mirror of WithArty200TOspiPeriphery except it swaps WithOspiCapture for
  *  WithOspiCaptureDma, which flips OspiParams.enableDma. */
